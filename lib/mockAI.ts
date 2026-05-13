@@ -1,4 +1,16 @@
-import type { Copywriting, ImageReview, Language, Product } from "./types";
+import type { Copywriting, ImageReview, Language } from "./types";
+
+/**
+ * Minimal product shape the mock AI calls care about. Compatible with both
+ * the legacy `Product` (which has `name + category + targetCountries`) and
+ * the new `MockProduct` (which uses `targetMarket` for the same idea).
+ */
+export interface AIProductContext {
+  name: string;
+  category: string;
+  /** ISO country codes the product targets, e.g. ["TH","VN"]. */
+  targetMarket: string[];
+}
 
 const TITLE_TEMPLATES: Record<Language, (name: string) => string> = {
   en: (name) => `[Hot Sale] ${name} - Premium Quality, Fast Shipping, Free Gift!`,
@@ -68,7 +80,7 @@ const KEYWORD_TEMPLATES: Record<Language, (name: string, category: string) => st
 };
 
 export async function generateCopywriting(
-  product: Product,
+  product: AIProductContext,
   language: Language
 ): Promise<Copywriting> {
   await new Promise((r) => setTimeout(r, 600 + Math.random() * 600));
@@ -81,7 +93,10 @@ export async function generateCopywriting(
   };
 }
 
-export async function reviewImage(imageUrl: string, product: Product): Promise<ImageReview> {
+export async function reviewImage(
+  imageUrl: string,
+  product: AIProductContext
+): Promise<ImageReview> {
   await new Promise((r) => setTimeout(r, 500 + Math.random() * 500));
   const seed = imageUrl.length + product.name.length;
   return {
@@ -90,8 +105,8 @@ export async function reviewImage(imageUrl: string, product: Product): Promise<I
     isCluttered: seed % 4 === 0,
     hasSellingPoint: seed % 2 === 0,
     localizationTip:
-      product.targetCountries.length > 0
-        ? `针对 ${product.targetCountries.join(", ")} 市场，建议使用当地模特或场景，并将文字替换为目标语言。`
+      product.targetMarket.length > 0
+        ? `针对 ${product.targetMarket.join(", ")} 市场，建议使用当地模特或场景，并将文字替换为目标语言。`
         : "建议根据目标市场的审美调整配色与排版。",
     ctrTip:
       "主图建议突出价格优势（如划线价 + 折扣徽章）、加入「Free Shipping」「Best Seller」等点击吸引元素，并保证主体占比 ≥ 60%。",

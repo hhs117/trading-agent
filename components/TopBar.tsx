@@ -1,36 +1,37 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { Search } from "lucide-react";
+import { Menu, Search } from "lucide-react";
 
-const TITLE_MAP: Record<string, string> = {
-  "/": "数据看板",
-  "/products": "产品库",
-  "/products/new": "新建产品",
-  "/settings": "设置",
-};
-
-function resolveTitle(pathname: string): string {
-  if (TITLE_MAP[pathname]) return TITLE_MAP[pathname];
-  if (pathname.startsWith("/products/") && pathname.split("/").length >= 3) {
-    return "产品详情";
-  }
-  return "SEAPick";
-}
+import { resolveNavTitle } from "./nav.config";
+import { useNavShell } from "./NavShell";
 
 export default function TopBar() {
   const pathname = usePathname();
-  const title = resolveTitle(pathname);
+  const title = resolveNavTitle(pathname);
+  const { openMobile } = useNavShell();
 
   return (
-    <header className="sticky top-0 z-10 border-b border-apple-gray-100 bg-white/70 backdrop-blur-xl">
-      <div className="px-8 py-4 flex items-center justify-between max-w-[1400px] mx-auto">
-        <h1 className="text-[20px] font-semibold text-apple-gray-900">{title}</h1>
-        <div className="relative">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-apple-gray-300" />
+    <header className="sticky top-0 z-20 border-b border-apple-gray-100 bg-white/75 backdrop-blur-xl">
+      <div className="mx-auto flex max-w-[1400px] items-center justify-between gap-3 px-4 py-3 sm:px-6 sm:py-4 lg:px-8">
+        <div className="flex min-w-0 items-center gap-2">
+          <button
+            onClick={openMobile}
+            aria-label="打开导航"
+            className="-ml-1 rounded-lg p-2 text-apple-gray-900 hover:bg-apple-gray-50 lg:hidden"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+          <h1 className="truncate text-[17px] font-semibold text-apple-gray-900 sm:text-[20px]">
+            {title}
+          </h1>
+        </div>
+
+        <div className="relative hidden sm:block">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-apple-gray-300" />
           <input
-            placeholder="搜索产品…"
-            className="bg-apple-gray-50 rounded-xl py-2 pl-9 pr-4 text-[13px] w-72 outline-none focus:ring-2 focus:ring-apple-blue/30 transition"
+            placeholder="搜索产品、文案、关键词..."
+            className="w-56 rounded-xl bg-apple-gray-50 py-2 pl-9 pr-4 text-[13px] outline-none transition focus:ring-2 focus:ring-apple-blue/30 md:w-72"
           />
         </div>
       </div>

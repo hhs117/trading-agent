@@ -10,20 +10,25 @@ import {
 } from "recharts";
 
 import RecommendationBadge from "@/components/RecommendationBadge";
-import { calculateTotalScore, DEFAULT_SCORE, getRecommendation, RECOMMENDATION_META } from "@/lib/scoring";
-import { upsertProduct } from "@/lib/storage";
+import {
+  calculateTotalScore,
+  DEFAULT_SCORE,
+  getRecommendation,
+  RECOMMENDATION_META,
+} from "@/lib/scoring";
 import {
   SCORE_DIMENSION_DESCRIPTIONS,
   SCORE_DIMENSION_LABELS,
-  type Product,
   type ScoreDimensions,
 } from "@/lib/types";
+import { upsertMockProduct, type MockProduct } from "@/data/mockData";
+import { logActivity } from "@/data/activity";
 
 export default function ScoringTab({
   product,
   onUpdated,
 }: {
-  product: Product;
+  product: MockProduct;
   onUpdated: () => void;
 }) {
   const [score, setScore] = useState<ScoreDimensions>(product.score ?? DEFAULT_SCORE);
@@ -47,12 +52,18 @@ export default function ScoringTab({
   }
 
   function handleSave() {
-    upsertProduct({
+    upsertMockProduct({
       ...product,
       score,
       totalScore,
       recommendation,
       updatedAt: new Date().toISOString(),
+    });
+    logActivity({
+      type: "scoring_completed",
+      productId: product.id,
+      productName: product.name,
+      detail: `综合评分 ${totalScore.toFixed(1)} · ${RECOMMENDATION_META[recommendation].label}`,
     });
     setSaved(true);
     onUpdated();
@@ -60,7 +71,7 @@ export default function ScoringTab({
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
+    <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 lg:gap-8">
       {/* 左：滑块列表 */}
       <div className="lg:col-span-3 space-y-4">
         {(Object.keys(SCORE_DIMENSION_LABELS) as Array<keyof ScoreDimensions>).map((key) => (

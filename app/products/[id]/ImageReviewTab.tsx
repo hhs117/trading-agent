@@ -4,14 +4,15 @@ import { useState } from "react";
 import { AlertCircle, Check, Image as ImageIcon, Sparkles, X } from "lucide-react";
 
 import { reviewImage } from "@/lib/mockAI";
-import { upsertProduct } from "@/lib/storage";
-import type { ImageReview, Product } from "@/lib/types";
+import type { ImageReview } from "@/lib/types";
+import { upsertMockProduct, type MockProduct } from "@/data/mockData";
+import { logActivity } from "@/data/activity";
 
 export default function ImageReviewTab({
   product,
   onUpdated,
 }: {
-  product: Product;
+  product: MockProduct;
   onUpdated: () => void;
 }) {
   const [imageUrl, setImageUrl] = useState("");
@@ -22,11 +23,25 @@ export default function ImageReviewTab({
     if (!imageUrl.trim()) return;
     setLoading(true);
     try {
-      const review = await reviewImage(imageUrl.trim(), product);
+      const review = await reviewImage(imageUrl.trim(), {
+        name: product.name,
+        category: product.category,
+        targetMarket: product.targetMarket,
+      });
       const next = [review, ...reviews];
       setReviews(next);
       setImageUrl("");
-      upsertProduct({ ...product, imageReviews: next, updatedAt: new Date().toISOString() });
+      upsertMockProduct({
+        ...product,
+        imageReviews: next,
+        updatedAt: new Date().toISOString(),
+      });
+      logActivity({
+        type: "image_reviewed",
+        productId: product.id,
+        productName: product.name,
+        detail: "新增 1 张主图审查",
+      });
       onUpdated();
     } finally {
       setLoading(false);
@@ -34,15 +49,20 @@ export default function ImageReviewTab({
   }
 
   function handleRemove(idx: number) {
+    if (!confirm("确认删除这条图片审核记录？此操作不可恢复。")) return;
     const next = reviews.filter((_, i) => i !== idx);
     setReviews(next);
-    upsertProduct({ ...product, imageReviews: next, updatedAt: new Date().toISOString() });
+    upsertMockProduct({
+      ...product,
+      imageReviews: next,
+      updatedAt: new Date().toISOString(),
+    });
     onUpdated();
   }
 
   return (
     <div className="space-y-5">
-      <div className="flex gap-3">
+      <div className="flex flex-col sm:flex-row gap-3">
         <input
           value={imageUrl}
           onChange={(e) => setImageUrl(e.target.value)}
@@ -52,7 +72,7 @@ export default function ImageReviewTab({
         <button
           onClick={handleAnalyze}
           disabled={loading || !imageUrl.trim()}
-          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-[13px] font-medium text-white bg-apple-blue hover:bg-blue-600 transition disabled:opacity-60"
+          className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-[13px] font-medium text-white bg-apple-blue hover:bg-blue-600 transition disabled:opacity-60"
         >
           <Sparkles className="w-4 h-4" />
           {loading ? "分析中…" : "分析图片"}
@@ -68,7 +88,7 @@ export default function ImageReviewTab({
         <div className="space-y-4">
           {reviews.map((r, i) => (
             <div key={i} className="border border-apple-gray-100 rounded-2xl p-5">
-              <div className="flex items-start justify-between mb-4">
+              <div className="flex items-start justify-between mb-4 gap-3">
                 <a
                   href={r.imageUrl}
                   target="_blank"
@@ -79,7 +99,7 @@ export default function ImageReviewTab({
                 </a>
                 <button
                   onClick={() => handleRemove(i)}
-                  className="p-1.5 rounded-lg text-apple-gray-300 hover:text-apple-red hover:bg-apple-red/5 transition"
+                  className="p-1.5 rounded-lg text-apple-gray-300 hover:text-apple-red hover:bg-apple-red/5 transition shrink-0"
                 >
                   <X className="w-4 h-4" />
                 </button>

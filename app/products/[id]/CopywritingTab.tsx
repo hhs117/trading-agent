@@ -4,8 +4,9 @@ import { useState } from "react";
 import { Check, Copy, Sparkles } from "lucide-react";
 
 import { generateCopywriting } from "@/lib/mockAI";
-import { upsertProduct } from "@/lib/storage";
-import { LANGUAGE_LABELS, type Copywriting, type Language, type Product } from "@/lib/types";
+import { LANGUAGE_LABELS, type Copywriting, type Language } from "@/lib/types";
+import { upsertMockProduct, type MockProduct } from "@/data/mockData";
+import { logActivity } from "@/data/activity";
 
 const LANGS: Language[] = ["en", "th", "vi", "id", "ms"];
 
@@ -13,7 +14,7 @@ export default function CopywritingTab({
   product,
   onUpdated,
 }: {
-  product: Product;
+  product: MockProduct;
   onUpdated: () => void;
 }) {
   const [language, setLanguage] = useState<Language>("en");
@@ -25,10 +26,27 @@ export default function CopywritingTab({
   async function handleGenerate() {
     setLoading(true);
     try {
-      const result = await generateCopywriting(product, language);
+      const result = await generateCopywriting(
+        {
+          name: product.name,
+          category: product.category,
+          targetMarket: product.targetMarket,
+        },
+        language
+      );
       const next = [...copywritings.filter((c) => c.language !== language), result];
       setCopywritings(next);
-      upsertProduct({ ...product, copywritings: next, updatedAt: new Date().toISOString() });
+      upsertMockProduct({
+        ...product,
+        copywritings: next,
+        updatedAt: new Date().toISOString(),
+      });
+      logActivity({
+        type: "copywriting_generated",
+        productId: product.id,
+        productName: product.name,
+        detail: `生成 ${LANGUAGE_LABELS[language]} 文案`,
+      });
       onUpdated();
     } finally {
       setLoading(false);
@@ -39,7 +57,7 @@ export default function CopywritingTab({
     <div className="space-y-5">
       {/* 语言切换 + 生成按钮 */}
       <div className="flex flex-wrap items-center gap-3 justify-between">
-        <div className="flex bg-apple-gray-50 rounded-xl p-1">
+        <div className="flex flex-wrap bg-apple-gray-50 rounded-xl p-1">
           {LANGS.map((lang) => (
             <button
               key={lang}
@@ -65,7 +83,6 @@ export default function CopywritingTab({
         </button>
       </div>
 
-      {/* 文案区块 */}
       {!current ? (
         <div className="text-center py-16 text-apple-gray-300 text-[13px]">
           点击右上角「一键生成」获取 {LANGUAGE_LABELS[language]} 文案
@@ -73,11 +90,7 @@ export default function CopywritingTab({
       ) : (
         <div className="space-y-4">
           <CopyBlock label="商品标题" text={current.title} />
-          <CopyBlock
-            label="五点卖点"
-            text={current.bullets.join("\n")}
-            multiline
-          />
+          <CopyBlock label="五点卖点" text={current.bullets.join("\n")} multiline />
           <CopyBlock label="详情页文案" text={current.description} multiline />
           <CopyBlock label="搜索关键词" text={current.keywords.join(", ")} />
         </div>
@@ -86,7 +99,15 @@ export default function CopywritingTab({
   );
 }
 
-function CopyBlock({ label, text, multiline = false }: { label: string; text: string; multiline?: boolean }) {
+function CopyBlock({
+  label,
+  text,
+  multiline = false,
+}: {
+  label: string;
+  text: string;
+  multiline?: boolean;
+}) {
   const [copied, setCopied] = useState(false);
 
   function copy() {
@@ -107,7 +128,12 @@ function CopyBlock({ label, text, multiline = false }: { label: string; text: st
           {copied ? "已复制" : "复制"}
         </button>
       </div>
-      <div className={["px-4 py-3 text-[13px] text-apple-gray-900", multiline ? "whitespace-pre-line leading-relaxed" : ""].join(" ")}>
+      <div
+        className={[
+          "px-4 py-3 text-[13px] text-apple-gray-900",
+          multiline ? "whitespace-pre-line leading-relaxed" : "",
+        ].join(" ")}
+      >
         {text}
       </div>
     </div>

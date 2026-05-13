@@ -2,6 +2,74 @@ import type { Product } from "./types";
 
 const KEY = "seapick_products";
 
+/* ============================================================
+ * Generic localStorage helpers (Phase 2 data layer)
+ *
+ * All four methods are SSR-safe — they no-op when `window` is
+ * undefined and never throw, so callers can use them at module
+ * load time without guards.
+ *
+ * Recommended key naming convention for new keys: `seapick:<name>`
+ * e.g. `seapick:mockProducts`, `seapick:competitors`.
+ * ============================================================ */
+
+const APP_KEY_PREFIX = "seapick";
+
+export function getStorageData<T>(key: string, defaultValue: T): T {
+  if (typeof window === "undefined") return defaultValue;
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (raw === null) return defaultValue;
+    return JSON.parse(raw) as T;
+  } catch {
+    return defaultValue;
+  }
+}
+
+export function setStorageData<T>(key: string, value: T): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // QuotaExceededError or serialization error — swallow silently
+  }
+}
+
+export function removeStorageData(key: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Clear stored data.
+ *  - With a `key`, behaves the same as `removeStorageData(key)`.
+ *  - Without a key, removes every entry whose key starts with the
+ *    SEAPick app prefix (legacy `seapick_*` and modern `seapick:*`).
+ */
+export function clearStorageData(key?: string): void {
+  if (typeof window === "undefined") return;
+  if (key) {
+    removeStorageData(key);
+    return;
+  }
+  try {
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const k = window.localStorage.key(i);
+      if (k && (k.startsWith(`${APP_KEY_PREFIX}:`) || k.startsWith(`${APP_KEY_PREFIX}_`))) {
+        keysToRemove.push(k);
+      }
+    }
+    keysToRemove.forEach((k) => window.localStorage.removeItem(k));
+  } catch {
+    // ignore
+  }
+}
+
 export function getProducts(): Product[] {
   if (typeof window === "undefined") return [];
   try {
