@@ -7,6 +7,7 @@ import { reviewImage } from "@/lib/mockAI";
 import type { ImageReview } from "@/lib/types";
 import { upsertMockProduct, type MockProduct } from "@/data/mockData";
 import { logActivity } from "@/data/activity";
+import { saveApiProduct } from "@/lib/api/products";
 
 export default function ImageReviewTab({
   product,
@@ -31,11 +32,13 @@ export default function ImageReviewTab({
       const next = [review, ...reviews];
       setReviews(next);
       setImageUrl("");
-      upsertMockProduct({
+      const nextProduct: MockProduct = {
         ...product,
         imageReviews: next,
         updatedAt: new Date().toISOString(),
-      });
+      };
+      const savedProduct = await saveApiProduct(nextProduct);
+      upsertMockProduct(savedProduct ?? nextProduct);
       logActivity({
         type: "image_reviewed",
         productId: product.id,
@@ -52,11 +55,13 @@ export default function ImageReviewTab({
     if (!confirm("确认删除这条图片审核记录？此操作不可恢复。")) return;
     const next = reviews.filter((_, i) => i !== idx);
     setReviews(next);
-    upsertMockProduct({
+    const nextProduct: MockProduct = {
       ...product,
       imageReviews: next,
       updatedAt: new Date().toISOString(),
-    });
+    };
+    void saveApiProduct(nextProduct);
+    upsertMockProduct(nextProduct);
     onUpdated();
   }
 

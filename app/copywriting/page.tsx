@@ -7,6 +7,11 @@ import Badge from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import PageHeader from "@/components/ui/PageHeader";
 import SectionCard from "@/components/ui/SectionCard";
+import {
+  clearGenerationRecords,
+  fetchGenerationRecords,
+  saveGenerationRecord,
+} from "@/lib/api/generationRecords";
 
 const LANGUAGES = ["英语", "日语", "韩语", "泰语", "越南语", "印尼语", "西班牙语"];
 const STYLES = ["简洁型", "强营销型", "高级品牌型", "本土化口语型", "TikTok 爆款型"];
@@ -156,13 +161,30 @@ export default function CopywritingPage() {
   const [history, setHistory] = useState<HistoryRecord[]>([]);
 
   useEffect(() => {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return;
-    try {
-      setHistory(JSON.parse(raw) as HistoryRecord[]);
-    } catch {
-      setHistory([]);
+    let active = true;
+
+    async function loadHistory() {
+      const remoteHistory = await fetchGenerationRecords<CopywritingInput, CopywritingResult>("copywriting");
+      if (!active) return;
+
+      if (remoteHistory) {
+        setHistory(remoteHistory.map(({ id, createdAt, input, result }) => ({ id, createdAt, input, result })));
+        return;
+      }
+
+      const raw = window.localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      try {
+        setHistory(JSON.parse(raw) as HistoryRecord[]);
+      } catch {
+        setHistory([]);
+      }
     }
+
+    void loadHistory();
+    return () => {
+      active = false;
+    };
   }, []);
 
   const canGenerate = useMemo(() => input.title.trim() || input.sellingPoints.trim() || input.description.trim(), [input]);
@@ -181,6 +203,10 @@ export default function CopywritingPage() {
     const nextHistory = [record, ...history].slice(0, 12);
     setHistory(nextHistory);
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextHistory));
+    void saveGenerationRecord({
+      ...record,
+      kind: "copywriting",
+    });
   }
 
   function handleGenerate() {
@@ -193,6 +219,7 @@ export default function CopywritingPage() {
     if (!confirm("确认清空所有文案生成历史？此操作不可恢复。")) return;
     setHistory([]);
     window.localStorage.removeItem(STORAGE_KEY);
+    void clearGenerationRecords("copywriting");
   }
 
   return (

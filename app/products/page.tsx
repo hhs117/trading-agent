@@ -37,6 +37,7 @@ import {
 } from "@/data/mockData";
 import { computeProfit, formatPct } from "@/data/derived";
 import { logActivity } from "@/data/activity";
+import { deleteApiProduct, fetchApiProducts } from "@/lib/api/products";
 
 const ALL = "" as const;
 
@@ -60,7 +61,18 @@ function ProductListInner() {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   useEffect(() => {
-    setProducts(getMockProducts());
+    let active = true;
+
+    async function loadProducts() {
+      const remoteProducts = await fetchApiProducts();
+      if (!active) return;
+      setProducts(remoteProducts ?? getMockProducts());
+    }
+
+    void loadProducts();
+    return () => {
+      active = false;
+    };
   }, []);
 
   const filtered = useMemo(() => {
@@ -74,19 +86,22 @@ function ProductListInner() {
     });
   }, [products, keyword, platform, category, status]);
 
-  function reload() {
-    setProducts(getMockProducts());
+  async function reload() {
+    const remoteProducts = await fetchApiProducts();
+    setProducts(remoteProducts ?? getMockProducts());
   }
 
-  function handleDelete(p: MockProduct) {
+  async function handleDelete(p: MockProduct) {
     if (!confirm(`确认删除「${p.name}」？此操作不可撤销。`)) return;
+    await deleteApiProduct(p.id);
     deleteMockProduct(p.id);
     logActivity({
       type: "product_deleted",
       productId: p.id,
       productName: p.name,
     });
-    reload();
+    setProducts((current) => current.filter((item) => item.id !== p.id));
+    void reload();
     setOpenMenuId(null);
   }
 

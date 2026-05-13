@@ -38,6 +38,7 @@ import {
   deleteMockProduct,
   getMockProductById,
   getMockProducts,
+  upsertMockProduct,
   MOCK_MARKET_LABELS,
   STATUS_TONE,
   type MockProduct,
@@ -53,6 +54,7 @@ import { RECOMMENDATION_META } from "@/lib/scoring";
 import ScoringTab from "./ScoringTab";
 import CopywritingTab from "./CopywritingTab";
 import ImageReviewTab from "./ImageReviewTab";
+import { deleteApiProduct, fetchApiProduct } from "@/lib/api/products";
 
 type TabKey = "scoring" | "copywriting" | "images";
 
@@ -71,18 +73,42 @@ export default function ProductDetailPage() {
   const toolsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const p = getMockProductById(params.id);
-    setProduct(p ?? null);
-    setLoaded(true);
+    let active = true;
+
+    async function loadProduct() {
+      const remoteProduct = await fetchApiProduct(params.id);
+      if (!active) return;
+
+      if (remoteProduct !== undefined) {
+        if (remoteProduct) upsertMockProduct(remoteProduct);
+        setProduct(remoteProduct);
+      } else {
+        setProduct(getMockProductById(params.id) ?? null);
+      }
+      setLoaded(true);
+    }
+
+    void loadProduct();
+    return () => {
+      active = false;
+    };
   }, [params.id]);
 
-  function refresh() {
+  async function refresh() {
+    const remoteProduct = await fetchApiProduct(params.id);
+    if (remoteProduct !== undefined) {
+      if (remoteProduct) upsertMockProduct(remoteProduct);
+      setProduct(remoteProduct);
+      return;
+    }
+
     setProduct(getMockProductById(params.id) ?? null);
   }
 
-  function handleDelete() {
+  async function handleDelete() {
     if (!product) return;
     if (!confirm(`确认删除「${product.name}」？此操作不可撤销。`)) return;
+    await deleteApiProduct(product.id);
     deleteMockProduct(product.id);
     logActivity({
       type: "product_deleted",

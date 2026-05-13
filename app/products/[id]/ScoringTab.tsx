@@ -23,6 +23,7 @@ import {
 } from "@/lib/types";
 import { upsertMockProduct, type MockProduct } from "@/data/mockData";
 import { logActivity } from "@/data/activity";
+import { saveApiProduct } from "@/lib/api/products";
 
 export default function ScoringTab({
   product,
@@ -51,14 +52,16 @@ export default function ScoringTab({
     setSaved(false);
   }
 
-  function handleSave() {
-    upsertMockProduct({
+  async function handleSave() {
+    const nextProduct: MockProduct = {
       ...product,
       score,
       totalScore,
       recommendation,
       updatedAt: new Date().toISOString(),
-    });
+    };
+    const savedProduct = await saveApiProduct(nextProduct);
+    upsertMockProduct(savedProduct ?? nextProduct);
     logActivity({
       type: "scoring_completed",
       productId: product.id,

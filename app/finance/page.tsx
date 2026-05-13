@@ -8,6 +8,11 @@ import { Button } from "@/components/ui/Button";
 import CopyableBlock, { CopyTextButton } from "@/components/ui/CopyableBlock";
 import PageHeader from "@/components/ui/PageHeader";
 import SectionCard from "@/components/ui/SectionCard";
+import {
+  deleteGenerationRecord,
+  fetchGenerationRecords,
+  saveGenerationRecord,
+} from "@/lib/api/generationRecords";
 
 const STORAGE_KEY = "seapick_finance_profit_history";
 
@@ -170,13 +175,30 @@ export default function FinancePage() {
   const result = useMemo(() => calculateProfit(input), [input]);
 
   useEffect(() => {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return;
-    try {
-      setHistory(JSON.parse(raw) as FinanceRecord[]);
-    } catch {
-      setHistory([]);
+    let active = true;
+
+    async function loadHistory() {
+      const remoteHistory = await fetchGenerationRecords<FinanceInput, FinanceResult>("finance");
+      if (!active) return;
+
+      if (remoteHistory) {
+        setHistory(remoteHistory.map(({ id, createdAt, input, result }) => ({ id, createdAt, input, result })));
+        return;
+      }
+
+      const raw = window.localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      try {
+        setHistory(JSON.parse(raw) as FinanceRecord[]);
+      } catch {
+        setHistory([]);
+      }
     }
+
+    void loadHistory();
+    return () => {
+      active = false;
+    };
   }, []);
 
   function update<K extends keyof FinanceInput>(key: K, value: FinanceInput[K]) {
@@ -193,6 +215,10 @@ export default function FinancePage() {
     const next = [record, ...history].slice(0, 20);
     setHistory(next);
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    void saveGenerationRecord({
+      ...record,
+      kind: "finance",
+    });
   }
 
   function deleteRecord(id: string) {
@@ -200,6 +226,7 @@ export default function FinancePage() {
     const next = history.filter((record) => record.id !== id);
     setHistory(next);
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    void deleteGenerationRecord(id);
   }
 
   return (

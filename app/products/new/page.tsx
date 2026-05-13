@@ -22,6 +22,7 @@ import {
 } from "@/data/mockData";
 import { computeProfit, formatPct, formatUsd } from "@/data/derived";
 import { logActivity } from "@/data/activity";
+import { createApiProduct } from "@/lib/api/products";
 
 /** Default commission % per platform (mirrors common SEA / global benchmarks). */
 const DEFAULT_COMMISSION: Record<ProductPlatform, number> = {
@@ -145,7 +146,7 @@ export default function NewProductPage() {
     return Object.keys(errs).length === 0;
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!validate()) {
       // scroll to first error
@@ -180,14 +181,15 @@ export default function NewProductPage() {
       stock: form.stock ? parseInt(form.stock, 10) : undefined,
       notes: form.notes.trim() || undefined,
     };
-    upsertMockProduct(product);
+    const savedProduct = await createApiProduct(product);
+    upsertMockProduct(savedProduct ?? product);
     logActivity({
       type: "product_created",
-      productId: id,
-      productName: product.name,
-      detail: `新建产品并设为「${product.status}」`,
+      productId: savedProduct?.id ?? id,
+      productName: savedProduct?.name ?? product.name,
+      detail: `新建产品并设为「${savedProduct?.status ?? product.status}」`,
     });
-    router.push(`/products/${id}`);
+    router.push(`/products/${savedProduct?.id ?? id}`);
   }
 
   return (
