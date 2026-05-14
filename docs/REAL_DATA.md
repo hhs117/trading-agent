@@ -5,7 +5,7 @@
 ## 已接入的 API
 
 - `GET /api/health`
-  - 查看服务状态和数据库是否配置。
+  - 查看服务状态、数据库是否配置、AI 是否配置。
 - `GET /api/products`
   - 从 PostgreSQL 读取产品列表。
 - `POST /api/products`
@@ -26,6 +26,8 @@
   - 删除单条生成记录。
 - `DELETE /api/generation-records?kind=copywriting`
   - 清空某类生成记录。
+- `POST /api/ai/copywriting`
+  - 使用 OpenAI 生成多语言商品文案。没有配置 `OPENAI_API_KEY` 时，前端会自动回退到 mock 生成。
 
 ## 数据库
 
@@ -39,6 +41,8 @@ database/schema.sql
 
 ```env
 DATABASE_URL=postgres://USER:PASSWORD@HOST:PORT/DATABASE
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-5-mini
 ```
 
 ## 当前前端策略
@@ -46,6 +50,7 @@ DATABASE_URL=postgres://USER:PASSWORD@HOST:PORT/DATABASE
 - 产品列表、新建、详情、删除：优先调用 `/api/products`。
 - 产品评分、详情页文案、图片审核：更新后会同步调用 `/api/products/:id`。
 - 多语言文案历史：优先调用 `/api/generation-records?kind=copywriting`。
+- 多语言文案生成：优先调用 `/api/ai/copywriting`，失败时使用本地 mock。
 - 财务利润历史：优先调用 `/api/generation-records?kind=finance`。
 - API 不可用或没有 `DATABASE_URL`：自动回退到 localStorage。
 

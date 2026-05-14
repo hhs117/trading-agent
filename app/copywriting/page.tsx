@@ -12,6 +12,7 @@ import {
   fetchGenerationRecords,
   saveGenerationRecord,
 } from "@/lib/api/generationRecords";
+import { generateCopywritingWithAi } from "@/lib/api/ai";
 
 const LANGUAGES = ["英语", "日语", "韩语", "泰语", "越南语", "印尼语", "西班牙语"];
 const STYLES = ["简洁型", "强营销型", "高级品牌型", "本土化口语型", "TikTok 爆款型"];
@@ -159,6 +160,7 @@ export default function CopywritingPage() {
   const [input, setInput] = useState<CopywritingInput>(initialInput);
   const [result, setResult] = useState<CopywritingResult | null>(null);
   const [history, setHistory] = useState<HistoryRecord[]>([]);
+  const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -209,10 +211,16 @@ export default function CopywritingPage() {
     });
   }
 
-  function handleGenerate() {
-    const nextResult = mockGenerateCopywriting(input);
-    setResult(nextResult);
-    saveRecord(nextResult);
+  async function handleGenerate() {
+    setGenerating(true);
+    try {
+      const aiResult = await generateCopywritingWithAi(input);
+      const nextResult = aiResult ?? mockGenerateCopywriting(input);
+      setResult(nextResult);
+      saveRecord(nextResult);
+    } finally {
+      setGenerating(false);
+    }
   }
 
   function clearHistory() {
@@ -230,14 +238,14 @@ export default function CopywritingPage() {
         badge="第六阶段"
         description="输入中文商品信息，按目标平台、市场、语言和风格生成可复制、可保存的跨境商品文案。"
         action={
-          <Button icon={Sparkles} onClick={handleGenerate} disabled={!canGenerate}>
-            生成文案
+          <Button icon={Sparkles} onClick={handleGenerate} disabled={!canGenerate || generating}>
+            {generating ? "生成中" : "生成文案"}
           </Button>
         }
       />
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[420px_1fr]">
-        <SectionCard title="生成参数" description="先用 mock 逻辑生成，后续可替换为真实模型接口。">
+        <SectionCard title="生成参数" description="已接入 AI 接口，未配置密钥时自动回退到 mock。">
           <div className="space-y-4">
             <div>
               <FieldLabel>中文商品标题</FieldLabel>
@@ -381,14 +389,14 @@ export default function CopywritingPage() {
               <div className="flex min-h-[340px] flex-col items-center justify-center rounded-2xl border border-dashed border-apple-gray-200 bg-apple-gray-50/50 text-center">
                 <Sparkles className="mb-3 h-7 w-7 text-apple-gray-300" />
                 <div className="text-[14px] font-medium text-apple-gray-900">填写参数后生成文案</div>
-                <div className="mt-1 text-[12px] text-apple-gray-300">结果会自动保存到浏览器本地历史。</div>
+                <div className="mt-1 text-[12px] text-apple-gray-300">结果会自动保存到历史记录。</div>
               </div>
             )}
           </SectionCard>
 
           <SectionCard
             title="历史生成记录"
-            description="最多保留最近 12 条 localStorage 记录。"
+            description="最多保留最近 12 条记录，配置数据库后会同步保存到后端。"
             action={
               history.length ? (
                 <Button variant="secondary" size="sm" icon={Trash2} onClick={clearHistory}>
