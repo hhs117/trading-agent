@@ -1,11 +1,11 @@
 # SEAPick Real Data Integration
 
-本项目现在已经预留真实数据入口。生产环境只要配置 `DATABASE_URL`，产品库和部分生成记录会优先走后端 API；没有配置数据库时，页面会继续回退到现有 mock/localStorage 演示数据。
+本项目已经预留真实数据入口。生产环境配置 `DATABASE_URL` 后，产品库和部分生成记录会优先走后端 API；没有配置数据库时，页面会继续回退到 mock/localStorage 演示数据。
 
 ## 已接入的 API
 
 - `GET /api/health`
-  - 查看服务状态、数据库是否配置、AI 是否配置。
+  - 查看服务状态、数据库是否配置、AI 是否配置、当前 AI provider 和模型。
 - `GET /api/products`
   - 从 PostgreSQL 读取产品列表。
 - `POST /api/products`
@@ -27,9 +27,9 @@
 - `DELETE /api/generation-records?kind=copywriting`
   - 清空某类生成记录。
 - `POST /api/ai/copywriting`
-  - 使用 OpenAI 生成多语言商品文案。没有配置 `OPENAI_API_KEY` 时，前端会自动回退到 mock 生成。
+  - 使用 AI 生成多语言商品文案。支持 DeepSeek 和 OpenAI；没有配置密钥时，前端会自动回退到 mock 生成。
 
-## 数据库
+## 环境变量
 
 支持 Neon、Supabase、Vercel Postgres 或普通 PostgreSQL。表结构见：
 
@@ -41,8 +41,28 @@ database/schema.sql
 
 ```env
 DATABASE_URL=postgres://USER:PASSWORD@HOST:PORT/DATABASE
+```
+
+DeepSeek 推荐配置：
+
+```env
+AI_PROVIDER=deepseek
+DEEPSEEK_API_KEY=sk-...
+DEEPSEEK_MODEL=deepseek-v4-flash
+```
+
+OpenAI 可选配置：
+
+```env
+AI_PROVIDER=openai
 OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-5-mini
+```
+
+也可以使用通用模型变量：
+
+```env
+AI_MODEL=deepseek-v4-flash
 ```
 
 ## 当前前端策略
@@ -58,7 +78,6 @@ OPENAI_MODEL=gpt-5-mini
 
 下一步可以继续把这些模块接入真实服务：
 
-- `/api/ai/copywriting`
 - `/api/ai/image-prompts`
 - `/api/ai/image-review`
 - `/api/ai/customer-reply`
