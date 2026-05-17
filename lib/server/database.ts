@@ -40,6 +40,65 @@ export type StoreRecord = {
   updatedAt: string;
 };
 
+export type SyncEntityType = "product" | "order";
+export type SyncSource = "manual" | "api" | "csv";
+export type SyncRunStatus = "success" | "partial" | "failed";
+
+export type SyncedStoreProductInput = {
+  externalProductId: string;
+  externalSku?: string | null;
+  title: string;
+  status: string;
+  price?: number | null;
+  currency?: string | null;
+  stock?: number | null;
+  imageUrl?: string | null;
+  raw?: Record<string, unknown>;
+};
+
+export type StoreProductRecord = SyncedStoreProductInput & {
+  id: string;
+  storeId: string;
+  syncedAt: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type SyncedOrderInput = {
+  externalOrderId: string;
+  status: string;
+  currency?: string | null;
+  totalAmount?: number | null;
+  buyerCountry?: string | null;
+  placedAt?: string | null;
+  paidAt?: string | null;
+  shippedAt?: string | null;
+  raw?: Record<string, unknown>;
+};
+
+export type OrderRecord = SyncedOrderInput & {
+  id: string;
+  storeId: string;
+  syncedAt: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type SyncRunRecord = {
+  id: string;
+  storeId: string;
+  entityType: SyncEntityType;
+  source: SyncSource;
+  status: SyncRunStatus;
+  receivedCount: number;
+  upsertedCount: number;
+  failedCount: number;
+  cursor: string | null;
+  metadata: Record<string, unknown>;
+  startedAt: string;
+  finishedAt: string;
+};
+
 type DbGenerationRow = {
   id: string;
   kind: GenerationKind;
@@ -108,6 +167,55 @@ type DbStoreRow = {
   updated_at: Date | string;
 };
 
+type DbStoreProductRow = {
+  id: string;
+  store_id: string;
+  external_product_id: string;
+  external_sku: string | null;
+  title: string;
+  status: string;
+  price: string | number | null;
+  currency: string | null;
+  stock: number | null;
+  image_url: string | null;
+  raw: Record<string, unknown>;
+  synced_at: Date | string;
+  created_at: Date | string;
+  updated_at: Date | string;
+};
+
+type DbOrderRow = {
+  id: string;
+  store_id: string;
+  external_order_id: string;
+  status: string;
+  currency: string | null;
+  total_amount: string | number | null;
+  buyer_country: string | null;
+  placed_at: Date | string | null;
+  paid_at: Date | string | null;
+  shipped_at: Date | string | null;
+  raw: Record<string, unknown>;
+  synced_at: Date | string;
+  created_at: Date | string;
+  updated_at: Date | string;
+};
+
+type DbSyncRunRow = {
+  id: string;
+  store_id: string;
+  entity_type: SyncEntityType;
+  source: SyncSource;
+  status: SyncRunStatus;
+  received_count: number;
+  upserted_count: number;
+  failed_count: number;
+  cursor: string | null;
+  metadata: Record<string, unknown>;
+  started_at: Date | string;
+  finished_at: Date | string;
+};
+
 let pool: Pool | null = null;
 let schemaReady: Promise<void> | null = null;
 
@@ -173,6 +281,66 @@ async function createSchema() {
 
     CREATE INDEX IF NOT EXISTS seapick_stores_platform_market_idx
       ON seapick_stores (platform, market);
+
+    CREATE TABLE IF NOT EXISTS seapick_store_products (
+      id TEXT PRIMARY KEY,
+      store_id TEXT NOT NULL REFERENCES seapick_stores(id) ON DELETE CASCADE,
+      external_product_id TEXT NOT NULL,
+      external_sku TEXT,
+      title TEXT NOT NULL,
+      status TEXT NOT NULL,
+      price NUMERIC,
+      currency TEXT,
+      stock INTEGER,
+      image_url TEXT,
+      raw JSONB NOT NULL DEFAULT '{}'::jsonb,
+      synced_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (store_id, external_product_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS seapick_store_products_store_updated_idx
+      ON seapick_store_products (store_id, updated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS seapick_orders (
+      id TEXT PRIMARY KEY,
+      store_id TEXT NOT NULL REFERENCES seapick_stores(id) ON DELETE CASCADE,
+      external_order_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      currency TEXT,
+      total_amount NUMERIC,
+      buyer_country TEXT,
+      placed_at TIMESTAMPTZ,
+      paid_at TIMESTAMPTZ,
+      shipped_at TIMESTAMPTZ,
+      raw JSONB NOT NULL DEFAULT '{}'::jsonb,
+      synced_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (store_id, external_order_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS seapick_orders_store_placed_idx
+      ON seapick_orders (store_id, placed_at DESC);
+
+    CREATE TABLE IF NOT EXISTS seapick_sync_runs (
+      id TEXT PRIMARY KEY,
+      store_id TEXT NOT NULL REFERENCES seapick_stores(id) ON DELETE CASCADE,
+      entity_type TEXT NOT NULL CHECK (entity_type IN ('product', 'order')),
+      source TEXT NOT NULL CHECK (source IN ('manual', 'api', 'csv')),
+      status TEXT NOT NULL CHECK (status IN ('success', 'partial', 'failed')),
+      received_count INTEGER NOT NULL DEFAULT 0,
+      upserted_count INTEGER NOT NULL DEFAULT 0,
+      failed_count INTEGER NOT NULL DEFAULT 0,
+      cursor TEXT,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      started_at TIMESTAMPTZ NOT NULL,
+      finished_at TIMESTAMPTZ NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS seapick_sync_runs_store_created_idx
+      ON seapick_sync_runs (store_id, finished_at DESC);
 
     CREATE TABLE IF NOT EXISTS seapick_scoring_records (
       id TEXT PRIMARY KEY,
@@ -437,6 +605,282 @@ export async function updateStoreInDb(
     ]
   );
   return result.rows[0] ? normalizeStore(result.rows[0]) : null;
+}
+
+function toIso(value: Date | string | null): string | null {
+  if (!value) return null;
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+}
+
+function normalizeStoreProduct(row: DbStoreProductRow): StoreProductRecord {
+  return {
+    id: row.id,
+    storeId: row.store_id,
+    externalProductId: row.external_product_id,
+    externalSku: row.external_sku,
+    title: row.title,
+    status: row.status,
+    price: row.price === null ? null : Number(row.price),
+    currency: row.currency,
+    stock: row.stock,
+    imageUrl: row.image_url,
+    raw: row.raw,
+    syncedAt: toIso(row.synced_at)!,
+    createdAt: toIso(row.created_at)!,
+    updatedAt: toIso(row.updated_at)!,
+  };
+}
+
+function normalizeOrder(row: DbOrderRow): OrderRecord {
+  return {
+    id: row.id,
+    storeId: row.store_id,
+    externalOrderId: row.external_order_id,
+    status: row.status,
+    currency: row.currency,
+    totalAmount: row.total_amount === null ? null : Number(row.total_amount),
+    buyerCountry: row.buyer_country,
+    placedAt: toIso(row.placed_at),
+    paidAt: toIso(row.paid_at),
+    shippedAt: toIso(row.shipped_at),
+    raw: row.raw,
+    syncedAt: toIso(row.synced_at)!,
+    createdAt: toIso(row.created_at)!,
+    updatedAt: toIso(row.updated_at)!,
+  };
+}
+
+function normalizeSyncRun(row: DbSyncRunRow): SyncRunRecord {
+  return {
+    id: row.id,
+    storeId: row.store_id,
+    entityType: row.entity_type,
+    source: row.source,
+    status: row.status,
+    receivedCount: row.received_count,
+    upsertedCount: row.upserted_count,
+    failedCount: row.failed_count,
+    cursor: row.cursor,
+    metadata: row.metadata,
+    startedAt: toIso(row.started_at)!,
+    finishedAt: toIso(row.finished_at)!,
+  };
+}
+
+export async function listStoreProductsFromDb(storeId: string): Promise<StoreProductRecord[]> {
+  await ensureDatabaseSchema();
+  const result = await getPool().query<DbStoreProductRow>(
+    `
+      SELECT id, store_id, external_product_id, external_sku, title, status, price,
+             currency, stock, image_url, raw, synced_at, created_at, updated_at
+      FROM seapick_store_products
+      WHERE store_id = $1
+      ORDER BY updated_at DESC
+      LIMIT 500
+    `,
+    [storeId]
+  );
+  return result.rows.map(normalizeStoreProduct);
+}
+
+export async function upsertStoreProductsToDb(
+  storeId: string,
+  items: SyncedStoreProductInput[],
+  syncedAt: string
+): Promise<StoreProductRecord[]> {
+  await ensureDatabaseSchema();
+  const db = getPool();
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+    const saved: StoreProductRecord[] = [];
+    for (const item of items) {
+      const result = await client.query<DbStoreProductRow>(
+        `
+          INSERT INTO seapick_store_products (
+            id, store_id, external_product_id, external_sku, title, status,
+            price, currency, stock, image_url, raw, synced_at
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::timestamptz)
+          ON CONFLICT (store_id, external_product_id)
+          DO UPDATE SET
+            external_sku = EXCLUDED.external_sku,
+            title = EXCLUDED.title,
+            status = EXCLUDED.status,
+            price = EXCLUDED.price,
+            currency = EXCLUDED.currency,
+            stock = EXCLUDED.stock,
+            image_url = EXCLUDED.image_url,
+            raw = EXCLUDED.raw,
+            synced_at = EXCLUDED.synced_at,
+            updated_at = NOW()
+          RETURNING id, store_id, external_product_id, external_sku, title, status, price,
+                    currency, stock, image_url, raw, synced_at, created_at, updated_at
+        `,
+        [
+          crypto.randomUUID(),
+          storeId,
+          item.externalProductId,
+          item.externalSku ?? null,
+          item.title,
+          item.status,
+          item.price ?? null,
+          item.currency ?? null,
+          item.stock ?? null,
+          item.imageUrl ?? null,
+          JSON.stringify(item.raw ?? {}),
+          syncedAt,
+        ]
+      );
+      saved.push(normalizeStoreProduct(result.rows[0]));
+    }
+    await client.query("COMMIT");
+    return saved;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function listOrdersFromDb(storeId: string): Promise<OrderRecord[]> {
+  await ensureDatabaseSchema();
+  const result = await getPool().query<DbOrderRow>(
+    `
+      SELECT id, store_id, external_order_id, status, currency, total_amount, buyer_country,
+             placed_at, paid_at, shipped_at, raw, synced_at, created_at, updated_at
+      FROM seapick_orders
+      WHERE store_id = $1
+      ORDER BY placed_at DESC NULLS LAST, updated_at DESC
+      LIMIT 500
+    `,
+    [storeId]
+  );
+  return result.rows.map(normalizeOrder);
+}
+
+export async function upsertOrdersToDb(
+  storeId: string,
+  items: SyncedOrderInput[],
+  syncedAt: string
+): Promise<OrderRecord[]> {
+  await ensureDatabaseSchema();
+  const db = getPool();
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+    const saved: OrderRecord[] = [];
+    for (const item of items) {
+      const result = await client.query<DbOrderRow>(
+        `
+          INSERT INTO seapick_orders (
+            id, store_id, external_order_id, status, currency, total_amount, buyer_country,
+            placed_at, paid_at, shipped_at, raw, synced_at
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8::timestamptz, $9::timestamptz, $10::timestamptz, $11::jsonb, $12::timestamptz)
+          ON CONFLICT (store_id, external_order_id)
+          DO UPDATE SET
+            status = EXCLUDED.status,
+            currency = EXCLUDED.currency,
+            total_amount = EXCLUDED.total_amount,
+            buyer_country = EXCLUDED.buyer_country,
+            placed_at = EXCLUDED.placed_at,
+            paid_at = EXCLUDED.paid_at,
+            shipped_at = EXCLUDED.shipped_at,
+            raw = EXCLUDED.raw,
+            synced_at = EXCLUDED.synced_at,
+            updated_at = NOW()
+          RETURNING id, store_id, external_order_id, status, currency, total_amount, buyer_country,
+                    placed_at, paid_at, shipped_at, raw, synced_at, created_at, updated_at
+        `,
+        [
+          crypto.randomUUID(),
+          storeId,
+          item.externalOrderId,
+          item.status,
+          item.currency ?? null,
+          item.totalAmount ?? null,
+          item.buyerCountry ?? null,
+          item.placedAt ?? null,
+          item.paidAt ?? null,
+          item.shippedAt ?? null,
+          JSON.stringify(item.raw ?? {}),
+          syncedAt,
+        ]
+      );
+      saved.push(normalizeOrder(result.rows[0]));
+    }
+    await client.query("COMMIT");
+    return saved;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function saveSyncRunToDb(input: {
+  storeId: string;
+  entityType: SyncEntityType;
+  source: SyncSource;
+  status: SyncRunStatus;
+  receivedCount: number;
+  upsertedCount: number;
+  failedCount: number;
+  cursor?: string | null;
+  metadata?: Record<string, unknown>;
+  startedAt: string;
+  finishedAt: string;
+}): Promise<SyncRunRecord> {
+  await ensureDatabaseSchema();
+  const result = await getPool().query<DbSyncRunRow>(
+    `
+      INSERT INTO seapick_sync_runs (
+        id, store_id, entity_type, source, status, received_count, upserted_count,
+        failed_count, cursor, metadata, started_at, finished_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::timestamptz, $12::timestamptz)
+      RETURNING id, store_id, entity_type, source, status, received_count, upserted_count,
+                failed_count, cursor, metadata, started_at, finished_at
+    `,
+    [
+      crypto.randomUUID(),
+      input.storeId,
+      input.entityType,
+      input.source,
+      input.status,
+      input.receivedCount,
+      input.upsertedCount,
+      input.failedCount,
+      input.cursor ?? null,
+      JSON.stringify(input.metadata ?? {}),
+      input.startedAt,
+      input.finishedAt,
+    ]
+  );
+  return normalizeSyncRun(result.rows[0]);
+}
+
+export async function listSyncRunsFromDb(input: {
+  storeId?: string;
+  entityType?: SyncEntityType;
+}): Promise<SyncRunRecord[]> {
+  await ensureDatabaseSchema();
+  const result = await getPool().query<DbSyncRunRow>(
+    `
+      SELECT id, store_id, entity_type, source, status, received_count, upserted_count,
+             failed_count, cursor, metadata, started_at, finished_at
+      FROM seapick_sync_runs
+      WHERE ($1::text IS NULL OR store_id = $1)
+        AND ($2::text IS NULL OR entity_type = $2)
+      ORDER BY finished_at DESC
+      LIMIT 100
+    `,
+    [input.storeId ?? null, input.entityType ?? null]
+  );
+  return result.rows.map(normalizeSyncRun);
 }
 
 function normalizeRecord<Input, Result>(row: DbGenerationRow): GenerationRecord<Input, Result> {

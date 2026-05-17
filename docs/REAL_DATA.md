@@ -36,6 +36,16 @@
   - 读取单个店铺。
 - `PATCH /api/stores/:id`
   - 更新店铺信息、启停状态和连接状态。
+- `POST /api/sync/products`
+  - 批量写入平台商品快照，并记录一次同步任务。
+- `POST /api/sync/orders`
+  - 批量写入订单快照，并记录一次同步任务。
+- `GET /api/store-products?storeId=xxx`
+  - 读取某个店铺下已同步的平台商品。
+- `GET /api/orders?storeId=xxx`
+  - 读取某个店铺下已同步的订单。
+- `GET /api/sync-runs?storeId=xxx&entityType=product|order`
+  - 查询同步任务历史。
 - `GET /api/scoring-records`
   - 读取九宫格评分历史，可按 `productId` 过滤。
 - `POST /api/scoring-records`
@@ -88,6 +98,7 @@ AI_MODEL=deepseek-v4-flash
 
 - 产品列表、新建、详情、删除：优先调用 `/api/products`。
 - 新建产品时可选择归属店铺，后续真实数据会按店铺维度同步和聚合。
+- 平台商品和订单同步结果目前先落库为标准化快照；等店铺授权完成后，只需要补平台取数适配器。
 - 产品评分、详情页文案、图片审核：更新后会同步调用 `/api/products/:id`。
 - 多语言文案历史：优先调用 `/api/generation-records?kind=copywriting`。
 - 多语言文案生成：优先调用 `/api/ai/copywriting`，失败时使用本地 mock。
@@ -139,5 +150,46 @@ x-bootstrap-token: 你的 BOOTSTRAP_TOKEN
 - `/api/platform-metrics`
 - `/api/logistics/:orderNo`
 - `/api/security/status`
+
+### 商品同步 payload 示例
+
+```json
+{
+  "storeId": "store_xxx",
+  "source": "api",
+  "cursor": "next-page-token",
+  "items": [
+    {
+      "externalProductId": "123456",
+      "externalSku": "SKU-001",
+      "title": "Portable organizer bag",
+      "status": "active",
+      "price": 12.99,
+      "currency": "USD",
+      "stock": 120
+    }
+  ]
+}
+```
+
+### 订单同步 payload 示例
+
+```json
+{
+  "storeId": "store_xxx",
+  "source": "api",
+  "cursor": "next-page-token",
+  "items": [
+    {
+      "externalOrderId": "ORDER-001",
+      "status": "paid",
+      "currency": "USD",
+      "totalAmount": 29.98,
+      "buyerCountry": "US",
+      "placedAt": "2026-05-17T09:30:00.000Z"
+    }
+  ]
+}
+```
 
 接第三方平台前，建议先做登录/租户模型，把每个用户或店铺的数据隔离开。

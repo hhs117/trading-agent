@@ -36,6 +36,66 @@ CREATE TABLE IF NOT EXISTS seapick_stores (
 CREATE INDEX IF NOT EXISTS seapick_stores_platform_market_idx
   ON seapick_stores (platform, market);
 
+CREATE TABLE IF NOT EXISTS seapick_store_products (
+  id TEXT PRIMARY KEY,
+  store_id TEXT NOT NULL REFERENCES seapick_stores(id) ON DELETE CASCADE,
+  external_product_id TEXT NOT NULL,
+  external_sku TEXT,
+  title TEXT NOT NULL,
+  status TEXT NOT NULL,
+  price NUMERIC,
+  currency TEXT,
+  stock INTEGER,
+  image_url TEXT,
+  raw JSONB NOT NULL DEFAULT '{}'::jsonb,
+  synced_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (store_id, external_product_id)
+);
+
+CREATE INDEX IF NOT EXISTS seapick_store_products_store_updated_idx
+  ON seapick_store_products (store_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS seapick_orders (
+  id TEXT PRIMARY KEY,
+  store_id TEXT NOT NULL REFERENCES seapick_stores(id) ON DELETE CASCADE,
+  external_order_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  currency TEXT,
+  total_amount NUMERIC,
+  buyer_country TEXT,
+  placed_at TIMESTAMPTZ,
+  paid_at TIMESTAMPTZ,
+  shipped_at TIMESTAMPTZ,
+  raw JSONB NOT NULL DEFAULT '{}'::jsonb,
+  synced_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (store_id, external_order_id)
+);
+
+CREATE INDEX IF NOT EXISTS seapick_orders_store_placed_idx
+  ON seapick_orders (store_id, placed_at DESC);
+
+CREATE TABLE IF NOT EXISTS seapick_sync_runs (
+  id TEXT PRIMARY KEY,
+  store_id TEXT NOT NULL REFERENCES seapick_stores(id) ON DELETE CASCADE,
+  entity_type TEXT NOT NULL CHECK (entity_type IN ('product', 'order')),
+  source TEXT NOT NULL CHECK (source IN ('manual', 'api', 'csv')),
+  status TEXT NOT NULL CHECK (status IN ('success', 'partial', 'failed')),
+  received_count INTEGER NOT NULL DEFAULT 0,
+  upserted_count INTEGER NOT NULL DEFAULT 0,
+  failed_count INTEGER NOT NULL DEFAULT 0,
+  cursor TEXT,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  started_at TIMESTAMPTZ NOT NULL,
+  finished_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS seapick_sync_runs_store_created_idx
+  ON seapick_sync_runs (store_id, finished_at DESC);
+
 CREATE TABLE IF NOT EXISTS seapick_scoring_records (
   id TEXT PRIMARY KEY,
   product_id TEXT NOT NULL,
