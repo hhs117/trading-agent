@@ -28,6 +28,14 @@
   - 清空某类生成记录。
 - `POST /api/ai/copywriting`
   - 使用 AI 生成多语言商品文案。支持 DeepSeek 和 OpenAI；没有配置密钥时，前端会自动回退到 mock 生成。
+- `GET /api/stores`
+  - 读取已配置店铺。
+- `POST /api/stores`
+  - 新建店铺元数据。
+- `GET /api/stores/:id`
+  - 读取单个店铺。
+- `PATCH /api/stores/:id`
+  - 更新店铺信息、启停状态和连接状态。
 - `GET /api/scoring-records`
   - 读取九宫格评分历史，可按 `productId` 过滤。
 - `POST /api/scoring-records`
@@ -79,6 +87,7 @@ AI_MODEL=deepseek-v4-flash
 ## 当前前端策略
 
 - 产品列表、新建、详情、删除：优先调用 `/api/products`。
+- 新建产品时可选择归属店铺，后续真实数据会按店铺维度同步和聚合。
 - 产品评分、详情页文案、图片审核：更新后会同步调用 `/api/products/:id`。
 - 多语言文案历史：优先调用 `/api/generation-records?kind=copywriting`。
 - 多语言文案生成：优先调用 `/api/ai/copywriting`，失败时使用本地 mock。

@@ -17,6 +17,25 @@ CREATE TABLE IF NOT EXISTS seapick_generation_records (
 CREATE INDEX IF NOT EXISTS seapick_generation_kind_created_idx
   ON seapick_generation_records (kind, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS seapick_stores (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  platform TEXT NOT NULL,
+  market TEXT NOT NULL,
+  seller_id TEXT,
+  currency TEXT NOT NULL,
+  timezone TEXT NOT NULL,
+  source_type TEXT NOT NULL CHECK (source_type IN ('manual', 'api', 'csv')),
+  connection_status TEXT NOT NULL CHECK (connection_status IN ('unconfigured', 'connected', 'needs_reauth', 'error')),
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS seapick_stores_platform_market_idx
+  ON seapick_stores (platform, market);
+
 CREATE TABLE IF NOT EXISTS seapick_scoring_records (
   id TEXT PRIMARY KEY,
   product_id TEXT NOT NULL,

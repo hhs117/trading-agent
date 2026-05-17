@@ -73,9 +73,9 @@ function SidebarHeader({ onClose }: { onClose?: () => void }) {
 function Footer() {
   return (
     <div className="mt-6 rounded-2xl bg-gradient-to-br from-apple-blue to-blue-500 p-4 text-white">
-      <div className="mb-1 text-[12.5px] font-medium">MVP 演示版</div>
+      <div className="mb-1 text-[12.5px] font-medium">内部运营版</div>
       <div className="text-[11px] leading-relaxed text-white/85">
-        所有数据存储在浏览器本地，清空缓存或更换设备会丢失。
+        核心数据已接入数据库，部分分析页仍保留 mock 演示逻辑。
       </div>
     </div>
   );

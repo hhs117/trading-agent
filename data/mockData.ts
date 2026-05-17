@@ -51,6 +51,7 @@ export type PlatformFit = "high" | "medium" | "low";
 
 export interface MockProduct {
   id: string;
+  storeId?: string;
   name: string;
   category: string;
   platform: ProductPlatform;

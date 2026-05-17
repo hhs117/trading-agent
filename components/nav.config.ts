@@ -12,6 +12,7 @@ import {
   Plus,
   Search,
   Settings,
+  Store,
   ShieldCheck,
   Swords,
   TrendingUp,
@@ -85,7 +86,10 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     title: "系统",
-    items: [{ href: "/settings", label: "设置", icon: Settings }],
+    items: [
+      { href: "/stores", label: "店铺管理", icon: Store },
+      { href: "/settings", label: "设置", icon: Settings },
+    ],
   },
 ];
 

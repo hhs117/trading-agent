@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Plus, Sparkles } from "lucide-react";
@@ -23,6 +23,8 @@ import {
 import { computeProfit, formatPct, formatUsd } from "@/data/derived";
 import { logActivity } from "@/data/activity";
 import { createApiProduct } from "@/lib/api/products";
+import { fetchApiStores } from "@/lib/api/stores";
+import type { StoreRecord } from "@/lib/server/database";
 
 /** Default commission % per platform (mirrors common SEA / global benchmarks). */
 const DEFAULT_COMMISSION: Record<ProductPlatform, number> = {
@@ -36,6 +38,7 @@ const DEFAULT_COMMISSION: Record<ProductPlatform, number> = {
 
 interface FormState {
   name: string;
+  storeId: string;
   category: string;
   platform: ProductPlatform;
   targetMarket: string[];
@@ -51,6 +54,7 @@ interface FormState {
 
 const INITIAL: FormState = {
   name: "",
+  storeId: "",
   category: MOCK_CATEGORIES[0],
   platform: "Shopee",
   targetMarket: [],
@@ -67,8 +71,22 @@ const INITIAL: FormState = {
 export default function NewProductPage() {
   const router = useRouter();
   const [form, setForm] = useState<FormState>(INITIAL);
+  const [stores, setStores] = useState<StoreRecord[]>([]);
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    async function loadStores() {
+      const remoteStores = await fetchApiStores();
+      if (!active) return;
+      setStores((remoteStores ?? []).filter((store) => store.isActive));
+    }
+    void loadStores();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -159,6 +177,7 @@ export default function NewProductPage() {
     const id = generateMockProductId();
     const product: MockProduct = {
       id,
+      storeId: form.storeId || undefined,
       name: form.name.trim(),
       category: form.category,
       platform: form.platform,
@@ -211,6 +230,20 @@ export default function NewProductPage() {
       {/* === 基础信息 === */}
       <SectionCard title="基础信息">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <Field label="所属店铺">
+            <select
+              value={form.storeId}
+              onChange={(e) => update("storeId", e.target.value)}
+              className={inputCls}
+            >
+              <option value="">暂不指定</option>
+              {stores.map((store) => (
+                <option key={store.id} value={store.id}>
+                  {store.name} · {store.platform} · {store.market}
+                </option>
+              ))}
+            </select>
+          </Field>
           <Field label="产品名称" required error={errors.name}>
             <input
               value={form.name}

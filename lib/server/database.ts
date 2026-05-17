@@ -21,6 +21,25 @@ export type GenerationRecord<Input = unknown, Result = unknown> = {
   result: Result;
 };
 
+export type StoreSourceType = "manual" | "api" | "csv";
+export type StoreConnectionStatus = "unconfigured" | "connected" | "needs_reauth" | "error";
+
+export type StoreRecord = {
+  id: string;
+  name: string;
+  platform: string;
+  market: string;
+  sellerId: string | null;
+  currency: string;
+  timezone: string;
+  sourceType: StoreSourceType;
+  connectionStatus: StoreConnectionStatus;
+  isActive: boolean;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 type DbGenerationRow = {
   id: string;
   kind: GenerationKind;
@@ -73,6 +92,22 @@ type DbScoringRow = {
   created_at: Date | string;
 };
 
+type DbStoreRow = {
+  id: string;
+  name: string;
+  platform: string;
+  market: string;
+  seller_id: string | null;
+  currency: string;
+  timezone: string;
+  source_type: StoreSourceType;
+  connection_status: StoreConnectionStatus;
+  is_active: boolean;
+  notes: string | null;
+  created_at: Date | string;
+  updated_at: Date | string;
+};
+
 let pool: Pool | null = null;
 let schemaReady: Promise<void> | null = null;
 
@@ -119,6 +154,25 @@ async function createSchema() {
 
     CREATE INDEX IF NOT EXISTS seapick_generation_kind_created_idx
       ON seapick_generation_records (kind, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS seapick_stores (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      platform TEXT NOT NULL,
+      market TEXT NOT NULL,
+      seller_id TEXT,
+      currency TEXT NOT NULL,
+      timezone TEXT NOT NULL,
+      source_type TEXT NOT NULL CHECK (source_type IN ('manual', 'api', 'csv')),
+      connection_status TEXT NOT NULL CHECK (connection_status IN ('unconfigured', 'connected', 'needs_reauth', 'error')),
+      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      notes TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS seapick_stores_platform_market_idx
+      ON seapick_stores (platform, market);
 
     CREATE TABLE IF NOT EXISTS seapick_scoring_records (
       id TEXT PRIMARY KEY,
@@ -236,6 +290,153 @@ export async function deleteProductFromDb(id: string): Promise<boolean> {
   await ensureDatabaseSchema();
   const result = await getPool().query("DELETE FROM seapick_products WHERE id = $1", [id]);
   return (result.rowCount ?? 0) > 0;
+}
+
+function normalizeStore(row: DbStoreRow): StoreRecord {
+  return {
+    id: row.id,
+    name: row.name,
+    platform: row.platform,
+    market: row.market,
+    sellerId: row.seller_id,
+    currency: row.currency,
+    timezone: row.timezone,
+    sourceType: row.source_type,
+    connectionStatus: row.connection_status,
+    isActive: row.is_active,
+    notes: row.notes,
+    createdAt:
+      row.created_at instanceof Date
+        ? row.created_at.toISOString()
+        : new Date(row.created_at).toISOString(),
+    updatedAt:
+      row.updated_at instanceof Date
+        ? row.updated_at.toISOString()
+        : new Date(row.updated_at).toISOString(),
+  };
+}
+
+export async function listStoresFromDb(): Promise<StoreRecord[]> {
+  await ensureDatabaseSchema();
+  const result = await getPool().query<DbStoreRow>(
+    `
+      SELECT id, name, platform, market, seller_id, currency, timezone, source_type,
+             connection_status, is_active, notes, created_at, updated_at
+      FROM seapick_stores
+      ORDER BY created_at ASC
+    `
+  );
+  return result.rows.map(normalizeStore);
+}
+
+export async function getStoreById(id: string): Promise<StoreRecord | null> {
+  await ensureDatabaseSchema();
+  const result = await getPool().query<DbStoreRow>(
+    `
+      SELECT id, name, platform, market, seller_id, currency, timezone, source_type,
+             connection_status, is_active, notes, created_at, updated_at
+      FROM seapick_stores
+      WHERE id = $1
+    `,
+    [id]
+  );
+  return result.rows[0] ? normalizeStore(result.rows[0]) : null;
+}
+
+export async function createStoreInDb(input: {
+  id?: string;
+  name: string;
+  platform: string;
+  market: string;
+  sellerId?: string | null;
+  currency: string;
+  timezone: string;
+  sourceType: StoreSourceType;
+  connectionStatus: StoreConnectionStatus;
+  notes?: string | null;
+}): Promise<StoreRecord> {
+  await ensureDatabaseSchema();
+  const result = await getPool().query<DbStoreRow>(
+    `
+      INSERT INTO seapick_stores (
+        id, name, platform, market, seller_id, currency, timezone,
+        source_type, connection_status, notes
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      RETURNING id, name, platform, market, seller_id, currency, timezone, source_type,
+                connection_status, is_active, notes, created_at, updated_at
+    `,
+    [
+      input.id ?? crypto.randomUUID(),
+      input.name,
+      input.platform,
+      input.market,
+      input.sellerId ?? null,
+      input.currency,
+      input.timezone,
+      input.sourceType,
+      input.connectionStatus,
+      input.notes ?? null,
+    ]
+  );
+  return normalizeStore(result.rows[0]);
+}
+
+export async function updateStoreInDb(
+  id: string,
+  input: Partial<
+    Pick<
+      StoreRecord,
+      | "name"
+      | "platform"
+      | "market"
+      | "sellerId"
+      | "currency"
+      | "timezone"
+      | "sourceType"
+      | "connectionStatus"
+      | "isActive"
+      | "notes"
+    >
+  >
+): Promise<StoreRecord | null> {
+  await ensureDatabaseSchema();
+  const current = await getStoreById(id);
+  if (!current) return null;
+
+  const result = await getPool().query<DbStoreRow>(
+    `
+      UPDATE seapick_stores
+      SET name = $2,
+          platform = $3,
+          market = $4,
+          seller_id = $5,
+          currency = $6,
+          timezone = $7,
+          source_type = $8,
+          connection_status = $9,
+          is_active = $10,
+          notes = $11,
+          updated_at = NOW()
+      WHERE id = $1
+      RETURNING id, name, platform, market, seller_id, currency, timezone, source_type,
+                connection_status, is_active, notes, created_at, updated_at
+    `,
+    [
+      id,
+      input.name ?? current.name,
+      input.platform ?? current.platform,
+      input.market ?? current.market,
+      input.sellerId === undefined ? current.sellerId : input.sellerId,
+      input.currency ?? current.currency,
+      input.timezone ?? current.timezone,
+      input.sourceType ?? current.sourceType,
+      input.connectionStatus ?? current.connectionStatus,
+      input.isActive ?? current.isActive,
+      input.notes === undefined ? current.notes : input.notes,
+    ]
+  );
+  return result.rows[0] ? normalizeStore(result.rows[0]) : null;
 }
 
 function normalizeRecord<Input, Result>(row: DbGenerationRow): GenerationRecord<Input, Result> {
