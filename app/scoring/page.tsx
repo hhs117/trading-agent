@@ -47,13 +47,18 @@ import {
   getCellTone,
   getScoringRecommendation,
   getScoringRecords,
-  getScoringRecordsByProduct,
   type ScoringDimensionKey,
   type ScoringDimensions,
   type ScoringRecord,
   type ScoringSuggestion,
 } from "@/data/scoring";
 import { logActivity, formatRelativeTime } from "@/data/activity";
+import { fetchApiProducts } from "@/lib/api/products";
+import {
+  deleteApiScoringRecord,
+  fetchApiScoringRecords,
+  saveApiScoringRecord,
+} from "@/lib/api/scoringRecords";
 
 /* ============================================================
  *  Page entry (Suspense wraps useSearchParams)
@@ -79,25 +84,43 @@ function ScoringInner() {
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
-    const list = getMockProducts();
-    setProducts(list);
-    setRecords(getScoringRecords());
-    // Auto-pick the first product if no ?productId= specified
-    if (!initialProductId && list.length > 0) {
-      setProductId(list[0].id);
+    let active = true;
+
+    async function loadInitialData() {
+      const [remoteProducts, remoteRecords] = await Promise.all([
+        fetchApiProducts(),
+        fetchApiScoringRecords(),
+      ]);
+      if (!active) return;
+
+      const nextProducts = remoteProducts ?? getMockProducts();
+      setProducts(nextProducts);
+      setRecords(remoteRecords ?? getScoringRecords());
+
+      // Auto-pick the first product if no ?productId= specified
+      if (!initialProductId && nextProducts.length > 0) {
+        setProductId(nextProducts[0].id);
+      }
     }
+
+    void loadInitialData();
+    return () => {
+      active = false;
+    };
   }, [initialProductId]);
 
   useEffect(() => {
     // When the selected product changes, prefill from its latest record
     if (!productId) return;
-    const history = getScoringRecordsByProduct(productId);
+    const history = records
+      .filter((record) => record.productId === productId)
+      .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
     if (history.length > 0) {
       setScores(history[0].scores);
     } else {
       setScores(DEFAULT_SCORING);
     }
-  }, [productId, reloadKey]);
+  }, [productId, records, reloadKey]);
 
   const product = useMemo(
     () => products.find((p) => p.id === productId),
@@ -125,7 +148,7 @@ function ScoringInner() {
 
   function handleSave() {
     if (!product) return;
-    addScoringRecord({
+    const record = addScoringRecord({
       productId: product.id,
       productName: product.name,
       productImage: product.image,
@@ -140,9 +163,10 @@ function ScoringInner() {
       productName: product.name,
       detail: `九宫格平均分 ${average.toFixed(1)} · ${recommendation.label}`,
     });
-    setRecords(getScoringRecords());
+    setRecords((current) => [record, ...current.filter((item) => item.id !== record.id)]);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
+    void saveApiScoringRecord(record);
   }
 
   function handleLoadRecord(r: ScoringRecord) {
@@ -153,8 +177,9 @@ function ScoringInner() {
   function handleDeleteRecord(r: ScoringRecord) {
     if (!confirm("删除该评分记录？历史快照将无法恢复。")) return;
     deleteScoringRecord(r.id);
-    setRecords(getScoringRecords());
+    setRecords((current) => current.filter((item) => item.id !== r.id));
     setReloadKey((k) => k + 1);
+    void deleteApiScoringRecord(r.id);
   }
 
   return (

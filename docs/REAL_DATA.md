@@ -28,6 +28,16 @@
   - 清空某类生成记录。
 - `POST /api/ai/copywriting`
   - 使用 AI 生成多语言商品文案。支持 DeepSeek 和 OpenAI；没有配置密钥时，前端会自动回退到 mock 生成。
+- `GET /api/scoring-records`
+  - 读取九宫格评分历史，可按 `productId` 过滤。
+- `POST /api/scoring-records`
+  - 保存九宫格评分记录。
+- `DELETE /api/scoring-records?id=xxx`
+  - 删除九宫格评分记录。
+- `GET /api/compare-items`
+  - 读取当前登录账号的竞品对比列表。
+- `PUT /api/compare-items`
+  - 保存当前登录账号的竞品对比列表。
 
 ## 环境变量
 
@@ -41,6 +51,7 @@ database/schema.sql
 
 ```env
 DATABASE_URL=postgres://USER:PASSWORD@HOST:PORT/DATABASE
+BOOTSTRAP_TOKEN=one-time-random-secret
 ```
 
 DeepSeek 推荐配置：
@@ -72,7 +83,32 @@ AI_MODEL=deepseek-v4-flash
 - 多语言文案历史：优先调用 `/api/generation-records?kind=copywriting`。
 - 多语言文案生成：优先调用 `/api/ai/copywriting`，失败时使用本地 mock。
 - 财务利润历史：优先调用 `/api/generation-records?kind=finance`。
+- 九宫格评分历史：优先调用 `/api/scoring-records`。
+- 竞品对比列表：优先调用 `/api/compare-items`，按账号保存。
 - API 不可用或没有 `DATABASE_URL`：自动回退到 localStorage。
+
+## 内部账号初始化
+
+项目默认启用邀请制内部账号。首次上线后：
+
+1. 在 Vercel 环境变量中设置一个临时 `BOOTSTRAP_TOKEN`。
+2. 调用 `POST /api/auth/bootstrap` 创建第一个管理员账号，并在请求头里带：
+
+```txt
+x-bootstrap-token: 你的 BOOTSTRAP_TOKEN
+```
+
+3. 创建成功后，删除 Vercel 中的 `BOOTSTRAP_TOKEN` 并重新部署。
+4. 后续管理员可以在设置页创建内部成员账号。
+
+认证相关接口：
+
+- `POST /api/auth/login`
+- `POST /api/auth/logout`
+- `GET /api/auth/me`
+- `POST /api/auth/change-password`
+- `GET /api/users`
+- `POST /api/users`
 
 ## 后续建议
 

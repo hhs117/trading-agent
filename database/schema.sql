@@ -16,3 +16,58 @@ CREATE TABLE IF NOT EXISTS seapick_generation_records (
 
 CREATE INDEX IF NOT EXISTS seapick_generation_kind_created_idx
   ON seapick_generation_records (kind, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS seapick_scoring_records (
+  id TEXT PRIMARY KEY,
+  product_id TEXT NOT NULL,
+  data JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS seapick_scoring_product_created_idx
+  ON seapick_scoring_records (product_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS seapick_users (
+  id TEXT PRIMARY KEY,
+  email TEXT UNIQUE NOT NULL,
+  name TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('admin', 'operator', 'viewer')),
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_login_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS seapick_sessions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES seapick_users(id) ON DELETE CASCADE,
+  token_hash TEXT UNIQUE NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  revoked_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS seapick_sessions_user_idx
+  ON seapick_sessions (user_id, expires_at DESC);
+
+CREATE TABLE IF NOT EXISTS seapick_user_state (
+  user_id TEXT NOT NULL REFERENCES seapick_users(id) ON DELETE CASCADE,
+  state_key TEXT NOT NULL,
+  value JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (user_id, state_key)
+);
+
+CREATE TABLE IF NOT EXISTS seapick_audit_logs (
+  id TEXT PRIMARY KEY,
+  user_id TEXT REFERENCES seapick_users(id) ON DELETE SET NULL,
+  action TEXT NOT NULL,
+  entity_type TEXT NOT NULL,
+  entity_id TEXT,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS seapick_audit_logs_created_idx
+  ON seapick_audit_logs (created_at DESC);

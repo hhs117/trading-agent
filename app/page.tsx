@@ -53,6 +53,7 @@ import {
   type ActivityEntry,
   type ActivityType,
 } from "@/data/activity";
+import { fetchApiProducts } from "@/lib/api/products";
 
 /* ============================================================
  *  Activity icon mapping
@@ -78,9 +79,21 @@ export default function DashboardPage() {
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
 
   useEffect(() => {
-    setProducts(getMockProducts());
+    let active = true;
+
+    async function loadProducts() {
+      const remoteProducts = await fetchApiProducts();
+      if (!active) return;
+      setProducts(remoteProducts ?? getMockProducts());
+    }
+
+    void loadProducts();
     setPlatforms(getMockPlatforms());
     setActivity(getActivityLog());
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   const stats = useMemo(() => {

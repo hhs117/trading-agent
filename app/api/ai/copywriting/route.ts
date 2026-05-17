@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { isAuthResponse, requireUser } from "@/lib/server/auth";
+import { writeAuditLogToDb } from "@/lib/server/database";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -266,6 +268,8 @@ async function generateWithDeepSeek(apiKey: string, model: string, input: Copywr
 }
 
 export async function POST(request: Request) {
+  const auth = await requireUser();
+  if (isAuthResponse(auth)) return auth;
   const config = resolveProvider();
   if (!config?.apiKey) return unavailable();
 
@@ -304,6 +308,13 @@ export async function POST(request: Request) {
         { status: 502 }
       );
     }
+
+    await writeAuditLogToDb({
+      userId: auth.id,
+      action: "ai.copywriting_generated",
+      entityType: "ai_generation",
+      metadata: { provider: config.provider, model: config.model },
+    });
 
     return NextResponse.json({
       ok: true,

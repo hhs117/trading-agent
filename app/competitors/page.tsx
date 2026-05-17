@@ -14,10 +14,12 @@ import {
   formatUsd,
   getCompareItems,
   removeCompareItem,
+  saveCompareIds,
   subscribeCompareItems,
   type CompetitionLevel,
   type CompetitorItem,
 } from "@/data/phase5";
+import { fetchApiCompareIds, saveApiCompareIds } from "@/lib/api/compareItems";
 
 const COMPETITION_VALUE: Record<CompetitionLevel, number> = {
   low: 1,
@@ -33,7 +35,18 @@ export default function CompetitorsPage() {
   const [items, setItems] = useState<CompetitorItem[]>([]);
 
   useEffect(() => {
-    setItems(getCompareItems());
+    let active = true;
+
+    async function loadItems() {
+      const remoteIds = await fetchApiCompareIds();
+      if (!active) return;
+      if (remoteIds) {
+        saveCompareIds(remoteIds);
+      }
+      setItems(getCompareItems());
+    }
+
+    void loadItems();
     return subscribeCompareItems(() => setItems(getCompareItems()));
   }, []);
 
@@ -43,13 +56,16 @@ export default function CompetitorsPage() {
   function handleRemove(id: string) {
     if (!confirm("确认从竞品对比中移除该商品？")) return;
     removeCompareItem(id);
-    setItems(getCompareItems());
+    const nextItems = getCompareItems();
+    setItems(nextItems);
+    void saveApiCompareIds(nextItems.map((item) => item.id));
   }
 
   function handleClear() {
     if (!confirm("确认清空所有竞品对比项？此操作不可恢复。")) return;
     clearCompareItems();
     setItems([]);
+    void saveApiCompareIds([]);
   }
 
   return (

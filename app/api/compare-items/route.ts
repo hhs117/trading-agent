@@ -1,22 +1,31 @@
 import { NextResponse } from "next/server";
 
+import { MAX_COMPARE_COUNT } from "@/data/phase5";
+import { isAuthResponse, requireUser } from "@/lib/server/auth";
 import {
+  getUserStateFromDb,
   isDatabaseConfigured,
-  listProductsFromDb,
-  upsertProductToDb,
+  saveUserStateToDb,
   writeAuditLogToDb,
 } from "@/lib/server/database";
-import type { MockProduct } from "@/data/mockData";
-import { isAuthResponse, requireUser } from "@/lib/server/auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+
+const STATE_KEY = "phase5.compareCompetitors";
 
 function unavailable() {
   return NextResponse.json(
     { ok: false, database: false, message: "DATABASE_URL is not configured" },
     { status: 200 }
   );
+}
+
+function sanitizeIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    .slice(0, MAX_COMPARE_COUNT);
 }
 
 function errorResponse(error: unknown) {
@@ -30,32 +39,30 @@ export async function GET() {
   if (!isDatabaseConfigured()) return unavailable();
 
   try {
-    const products = await listProductsFromDb();
-    return NextResponse.json({ ok: true, database: true, products });
+    const ids = (await getUserStateFromDb<string[]>(auth.id, STATE_KEY)) ?? [];
+    return NextResponse.json({ ok: true, database: true, ids: sanitizeIds(ids) });
   } catch (error) {
     return errorResponse(error);
   }
 }
 
-export async function POST(request: Request) {
+export async function PUT(request: Request) {
   const auth = await requireUser();
   if (isAuthResponse(auth)) return auth;
   if (!isDatabaseConfigured()) return unavailable();
 
   try {
-    const product = (await request.json()) as MockProduct;
-    if (!product?.id || !product.name) {
-      return NextResponse.json({ ok: false, message: "Invalid product payload" }, { status: 400 });
-    }
-
-    const saved = await upsertProductToDb(product);
+    const body = (await request.json()) as { ids?: unknown };
+    const ids = sanitizeIds(body.ids);
+    const saved = await saveUserStateToDb(auth.id, STATE_KEY, ids);
     await writeAuditLogToDb({
       userId: auth.id,
-      action: "product.upserted",
-      entityType: "product",
-      entityId: saved.id,
+      action: "compare_items.saved",
+      entityType: "user_state",
+      entityId: STATE_KEY,
+      metadata: { count: ids.length },
     });
-    return NextResponse.json({ ok: true, database: true, product: saved }, { status: 201 });
+    return NextResponse.json({ ok: true, database: true, ids: sanitizeIds(saved) });
   } catch (error) {
     return errorResponse(error);
   }

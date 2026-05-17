@@ -17,11 +17,13 @@ import {
   formatUsd,
   getCompareIds,
   removeCompareItem,
+  saveCompareIds,
   subscribeCompareItems,
   type CompetitorItem,
   type CompetitionLevel,
   type PlatformName,
 } from "@/data/phase5";
+import { fetchApiCompareIds, saveApiCompareIds } from "@/lib/api/compareItems";
 
 const PLATFORM_OPTIONS: Array<PlatformName | ""> = ["", "Shopee", "Lazada", "TikTok Shop", "Amazon", "Temu", "AliExpress"];
 
@@ -48,7 +50,20 @@ export default function SearchProductsPage() {
   const [toast, setToast] = useState("");
 
   useEffect(() => {
-    setCompareIds(getCompareIds());
+    let active = true;
+
+    async function loadCompareIds() {
+      const remoteIds = await fetchApiCompareIds();
+      if (!active) return;
+      if (remoteIds) {
+        saveCompareIds(remoteIds);
+        setCompareIds(remoteIds);
+        return;
+      }
+      setCompareIds(getCompareIds());
+    }
+
+    void loadCompareIds();
     return subscribeCompareItems(() => setCompareIds(getCompareIds()));
   }, []);
 
@@ -81,18 +96,22 @@ export default function SearchProductsPage() {
 
   function handleAdd(item: CompetitorItem) {
     const result = addCompareItem(item.id);
-    setCompareIds(getCompareIds());
+    const nextIds = getCompareIds();
+    setCompareIds(nextIds);
     if (!result.ok) {
       showToast(result.reason === "full" ? `最多加入 ${MAX_COMPARE_COUNT} 个竞品` : "该竞品已在对比列表");
       return;
     }
-    showToast("已加入对比，并保存到 localStorage");
+    void saveApiCompareIds(nextIds);
+    showToast("已加入对比，并保存到账号");
   }
 
   function handleRemove(item: CompetitorItem) {
     if (!confirm("确认从竞品对比中移除该商品？")) return;
     removeCompareItem(item.id);
-    setCompareIds(getCompareIds());
+    const nextIds = getCompareIds();
+    setCompareIds(nextIds);
+    void saveApiCompareIds(nextIds);
     showToast("已从对比中移除");
   }
 
@@ -104,7 +123,7 @@ export default function SearchProductsPage() {
         icon={Search}
         title="全网查品"
         badge="Mock 搜索"
-        description="输入产品关键词后返回跨平台竞品列表，并可把竞品加入对比，保存到 localStorage。"
+        description="输入产品关键词后返回跨平台竞品列表，并可把竞品加入对比，保存到当前账号。"
         action={
           compareIds.length ? (
             <LinkButton href="/competitors" variant="secondary" iconRight={ArrowRight}>

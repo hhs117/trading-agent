@@ -6,9 +6,11 @@ import {
   isDatabaseConfigured,
   listGenerationRecordsFromDb,
   saveGenerationRecordToDb,
+  writeAuditLogToDb,
   type GenerationKind,
   type GenerationRecord,
 } from "@/lib/server/database";
+import { isAuthResponse, requireUser } from "@/lib/server/auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -41,6 +43,8 @@ function errorResponse(error: unknown) {
 }
 
 export async function GET(request: Request) {
+  const auth = await requireUser();
+  if (isAuthResponse(auth)) return auth;
   if (!isDatabaseConfigured()) return unavailable();
 
   const { searchParams } = new URL(request.url);
@@ -58,6 +62,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const auth = await requireUser();
+  if (isAuthResponse(auth)) return auth;
   if (!isDatabaseConfigured()) return unavailable();
 
   try {
@@ -75,6 +81,13 @@ export async function POST(request: Request) {
       input: body.input,
       result: body.result,
     });
+    await writeAuditLogToDb({
+      userId: auth.id,
+      action: "generation_record.saved",
+      entityType: "generation_record",
+      entityId: record.id,
+      metadata: { kind: record.kind },
+    });
     return NextResponse.json({ ok: true, database: true, record }, { status: 201 });
   } catch (error) {
     return errorResponse(error);
@@ -82,6 +95,8 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const auth = await requireUser();
+  if (isAuthResponse(auth)) return auth;
   if (!isDatabaseConfigured()) return unavailable();
 
   const { searchParams } = new URL(request.url);
@@ -91,11 +106,25 @@ export async function DELETE(request: Request) {
   try {
     if (id) {
       const deleted = await deleteGenerationRecordFromDb(id);
+      if (deleted) {
+        await writeAuditLogToDb({
+          userId: auth.id,
+          action: "generation_record.deleted",
+          entityType: "generation_record",
+          entityId: id,
+        });
+      }
       return NextResponse.json({ ok: true, database: true, deleted });
     }
 
     if (kind) {
       const deleted = await clearGenerationRecordsFromDb(kind);
+      await writeAuditLogToDb({
+        userId: auth.id,
+        action: "generation_record.cleared",
+        entityType: "generation_record",
+        metadata: { kind, deleted },
+      });
       return NextResponse.json({ ok: true, database: true, deleted });
     }
 

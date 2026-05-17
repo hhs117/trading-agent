@@ -1,23 +1,17 @@
 import { NextResponse } from "next/server";
 
+import type { ScoringRecord } from "@/data/scoring";
+import { isAuthResponse, requireUser } from "@/lib/server/auth";
 import {
-  deleteProductFromDb,
-  getProductFromDb,
+  deleteScoringRecordFromDb,
   isDatabaseConfigured,
-  upsertProductToDb,
+  listScoringRecordsFromDb,
+  saveScoringRecordToDb,
   writeAuditLogToDb,
 } from "@/lib/server/database";
-import type { MockProduct } from "@/data/mockData";
-import { isAuthResponse, requireUser } from "@/lib/server/auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-
-type Context = {
-  params: {
-    id: string;
-  };
-};
 
 function unavailable() {
   return NextResponse.json(
@@ -31,59 +25,64 @@ function errorResponse(error: unknown) {
   return NextResponse.json({ ok: false, database: true, message }, { status: 500 });
 }
 
-export async function GET(_request: Request, { params }: Context) {
+export async function GET(request: Request) {
   const auth = await requireUser();
   if (isAuthResponse(auth)) return auth;
   if (!isDatabaseConfigured()) return unavailable();
 
+  const productId = new URL(request.url).searchParams.get("productId") ?? undefined;
+
   try {
-    const product = await getProductFromDb(params.id);
-    if (!product) {
-      return NextResponse.json({ ok: false, database: true, message: "Product not found" }, { status: 404 });
-    }
-    return NextResponse.json({ ok: true, database: true, product });
+    const records = await listScoringRecordsFromDb(productId);
+    return NextResponse.json({ ok: true, database: true, records });
   } catch (error) {
     return errorResponse(error);
   }
 }
 
-export async function PUT(request: Request, { params }: Context) {
+export async function POST(request: Request) {
   const auth = await requireUser();
   if (isAuthResponse(auth)) return auth;
   if (!isDatabaseConfigured()) return unavailable();
 
   try {
-    const product = (await request.json()) as MockProduct;
-    if (!product?.id || product.id !== params.id || !product.name) {
-      return NextResponse.json({ ok: false, message: "Invalid product payload" }, { status: 400 });
+    const record = (await request.json()) as ScoringRecord;
+    if (!record?.id || !record.productId || !record.productName || !record.scores) {
+      return NextResponse.json({ ok: false, message: "Invalid scoring record" }, { status: 400 });
     }
 
-    const saved = await upsertProductToDb(product);
+    const saved = await saveScoringRecordToDb(record);
     await writeAuditLogToDb({
       userId: auth.id,
-      action: "product.updated",
-      entityType: "product",
+      action: "scoring_record.saved",
+      entityType: "scoring_record",
       entityId: saved.id,
+      metadata: { productId: saved.productId },
     });
-    return NextResponse.json({ ok: true, database: true, product: saved });
+    return NextResponse.json({ ok: true, database: true, record: saved }, { status: 201 });
   } catch (error) {
     return errorResponse(error);
   }
 }
 
-export async function DELETE(_request: Request, { params }: Context) {
+export async function DELETE(request: Request) {
   const auth = await requireUser();
   if (isAuthResponse(auth)) return auth;
   if (!isDatabaseConfigured()) return unavailable();
 
+  const id = new URL(request.url).searchParams.get("id");
+  if (!id) {
+    return NextResponse.json({ ok: false, message: "Missing id" }, { status: 400 });
+  }
+
   try {
-    const deleted = await deleteProductFromDb(params.id);
+    const deleted = await deleteScoringRecordFromDb(id);
     if (deleted) {
       await writeAuditLogToDb({
         userId: auth.id,
-        action: "product.deleted",
-        entityType: "product",
-        entityId: params.id,
+        action: "scoring_record.deleted",
+        entityType: "scoring_record",
+        entityId: id,
       });
     }
     return NextResponse.json({ ok: true, database: true, deleted });
