@@ -44,6 +44,7 @@ export async function POST(request: Request) {
         email: user.email,
         name: user.name,
         role: user.role,
+        mustChangePassword: user.mustChangePassword,
       },
     });
     setSessionCookie(response, session.token, session.expiresAt);

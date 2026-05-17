@@ -38,6 +38,7 @@ export type AppUser = {
   name: string;
   role: UserRole;
   isActive: boolean;
+  mustChangePassword: boolean;
   createdAt: string;
   updatedAt: string;
   lastLoginAt: string | null;
@@ -50,6 +51,7 @@ type DbUserRow = {
   password_hash: string;
   role: UserRole;
   is_active: boolean;
+  must_change_password: boolean;
   created_at: Date | string;
   updated_at: Date | string;
   last_login_at: Date | string | null;
@@ -135,6 +137,7 @@ async function createSchema() {
       password_hash TEXT NOT NULL,
       role TEXT NOT NULL CHECK (role IN ('admin', 'operator', 'viewer')),
       is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       last_login_at TIMESTAMPTZ
@@ -172,6 +175,9 @@ async function createSchema() {
 
     CREATE INDEX IF NOT EXISTS seapick_audit_logs_created_idx
       ON seapick_audit_logs (created_at DESC);
+
+    ALTER TABLE seapick_users
+      ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
   `);
 }
 
@@ -369,6 +375,7 @@ function normalizeUser(row: DbUserRow): AppUser {
     name: row.name,
     role: row.role,
     isActive: row.is_active,
+    mustChangePassword: row.must_change_password,
     createdAt:
       row.created_at instanceof Date
         ? row.created_at.toISOString()
@@ -395,7 +402,7 @@ export async function listUsersFromDb(): Promise<AppUser[]> {
   await ensureDatabaseSchema();
   const result = await getPool().query<DbUserRow>(
     `
-      SELECT id, email, name, password_hash, role, is_active, created_at, updated_at, last_login_at
+      SELECT id, email, name, password_hash, role, is_active, must_change_password, created_at, updated_at, last_login_at
       FROM seapick_users
       ORDER BY created_at ASC
     `
@@ -407,7 +414,7 @@ export async function getUserByEmail(email: string): Promise<(AppUser & { passwo
   await ensureDatabaseSchema();
   const result = await getPool().query<DbUserRow>(
     `
-      SELECT id, email, name, password_hash, role, is_active, created_at, updated_at, last_login_at
+      SELECT id, email, name, password_hash, role, is_active, must_change_password, created_at, updated_at, last_login_at
       FROM seapick_users
       WHERE lower(email) = lower($1)
     `,
@@ -421,7 +428,7 @@ export async function getUserById(id: string): Promise<AppUser | null> {
   await ensureDatabaseSchema();
   const result = await getPool().query<DbUserRow>(
     `
-      SELECT id, email, name, password_hash, role, is_active, created_at, updated_at, last_login_at
+      SELECT id, email, name, password_hash, role, is_active, must_change_password, created_at, updated_at, last_login_at
       FROM seapick_users
       WHERE id = $1
     `,
@@ -436,25 +443,74 @@ export async function createUserInDb(input: {
   name: string;
   passwordHash: string;
   role: UserRole;
+  mustChangePassword?: boolean;
 }): Promise<AppUser> {
   await ensureDatabaseSchema();
   const result = await getPool().query<DbUserRow>(
     `
-      INSERT INTO seapick_users (id, email, name, password_hash, role)
-      VALUES ($1, lower($2), $3, $4, $5)
-      RETURNING id, email, name, password_hash, role, is_active, created_at, updated_at, last_login_at
+      INSERT INTO seapick_users (id, email, name, password_hash, role, must_change_password)
+      VALUES ($1, lower($2), $3, $4, $5, $6)
+      RETURNING id, email, name, password_hash, role, is_active, must_change_password, created_at, updated_at, last_login_at
     `,
-    [input.id ?? crypto.randomUUID(), input.email, input.name, input.passwordHash, input.role]
+    [
+      input.id ?? crypto.randomUUID(),
+      input.email,
+      input.name,
+      input.passwordHash,
+      input.role,
+      input.mustChangePassword ?? false,
+    ]
   );
   return normalizeUser(result.rows[0]);
 }
 
-export async function updateUserPasswordInDb(id: string, passwordHash: string): Promise<void> {
+export async function updateUserPasswordInDb(
+  id: string,
+  passwordHash: string,
+  mustChangePassword = false
+): Promise<void> {
   await ensureDatabaseSchema();
   await getPool().query(
-    "UPDATE seapick_users SET password_hash = $2, updated_at = NOW() WHERE id = $1",
-    [id, passwordHash]
+    `
+      UPDATE seapick_users
+      SET password_hash = $2,
+          must_change_password = $3,
+          updated_at = NOW()
+      WHERE id = $1
+    `,
+    [id, passwordHash, mustChangePassword]
   );
+}
+
+export async function updateUserInDb(
+  id: string,
+  input: Partial<Pick<AppUser, "name" | "role" | "isActive" | "mustChangePassword">>
+): Promise<AppUser | null> {
+  await ensureDatabaseSchema();
+  const current = await getUserById(id);
+  if (!current) return null;
+
+  const result = await getPool().query<DbUserRow>(
+    `
+      UPDATE seapick_users
+      SET name = $2,
+          role = $3,
+          is_active = $4,
+          must_change_password = $5,
+          updated_at = NOW()
+      WHERE id = $1
+      RETURNING id, email, name, password_hash, role, is_active, must_change_password, created_at, updated_at, last_login_at
+    `,
+    [
+      id,
+      input.name ?? current.name,
+      input.role ?? current.role,
+      input.isActive ?? current.isActive,
+      input.mustChangePassword ?? current.mustChangePassword,
+    ]
+  );
+
+  return result.rows[0] ? normalizeUser(result.rows[0]) : null;
 }
 
 export async function markUserLoginInDb(id: string): Promise<void> {
@@ -491,6 +547,7 @@ export async function getSessionUserByTokenHash(tokenHash: string): Promise<AppU
         u.password_hash,
         u.role,
         u.is_active,
+        u.must_change_password,
         u.created_at,
         u.updated_at,
         u.last_login_at,
@@ -517,6 +574,14 @@ export async function revokeSessionByTokenHash(tokenHash: string): Promise<void>
   await getPool().query(
     "UPDATE seapick_sessions SET revoked_at = NOW() WHERE token_hash = $1 AND revoked_at IS NULL",
     [tokenHash]
+  );
+}
+
+export async function revokeSessionsForUserInDb(userId: string): Promise<void> {
+  await ensureDatabaseSchema();
+  await getPool().query(
+    "UPDATE seapick_sessions SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL",
+    [userId]
   );
 }
 

@@ -11,8 +11,15 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let active = true;
     fetch("/api/auth/me", { cache: "no-store" })
-      .then((response) => {
+      .then(async (response) => {
         if (response.ok) {
+          const body = (await response.json()) as {
+            user?: { mustChangePassword?: boolean };
+          };
+          if (body.user?.mustChangePassword && pathname !== "/change-password") {
+            router.replace("/change-password");
+            return;
+          }
           if (active) setReady(true);
           return;
         }

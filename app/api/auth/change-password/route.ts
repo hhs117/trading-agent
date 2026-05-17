@@ -35,7 +35,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, message: "Current password is incorrect" }, { status: 400 });
   }
 
-  await updateUserPasswordInDb(auth.id, hashPassword(body.nextPassword));
+  await updateUserPasswordInDb(auth.id, hashPassword(body.nextPassword), false);
   await writeAuditLogToDb({
     userId: auth.id,
     action: "auth.password_changed",

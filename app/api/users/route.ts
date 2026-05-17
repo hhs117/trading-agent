@@ -58,6 +58,7 @@ export async function POST(request: Request) {
       name,
       passwordHash: hashPassword(body.password),
       role,
+      mustChangePassword: true,
     });
     await writeAuditLogToDb({
       userId: auth.id,

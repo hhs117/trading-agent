@@ -9,7 +9,7 @@ import AuthGate from "@/components/AuthGate";
 
 export default function AppChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  if (pathname === "/login") {
+  if (pathname === "/login" || pathname === "/change-password") {
     return <>{children}</>;
   }
 

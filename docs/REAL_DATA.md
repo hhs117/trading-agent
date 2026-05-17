@@ -109,6 +109,15 @@ x-bootstrap-token: 你的 BOOTSTRAP_TOKEN
 - `POST /api/auth/change-password`
 - `GET /api/users`
 - `POST /api/users`
+- `PATCH /api/users/:id`
+
+当前账号系统支持：
+
+- 管理员创建内部成员账号。
+- 新成员使用临时密码登录后，系统强制要求修改密码。
+- 管理员调整角色、启用/停用账号、重置临时密码。
+- 用户自行修改密码。
+- 登录、改密、账号变更均写入审计日志。
 
 ## 后续建议
 
