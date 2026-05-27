@@ -13,6 +13,10 @@ function resolveAiProvider() {
 
 export async function GET() {
   const aiProvider = resolveAiProvider();
+  const productSearchProvider =
+    process.env.PRODUCT_SEARCH_PROVIDER === "rainforest" || process.env.PRODUCT_SEARCH_PROVIDER === "external"
+      ? process.env.PRODUCT_SEARCH_PROVIDER
+      : "unconfigured";
   return NextResponse.json({
     ok: true,
     databaseConfigured: isDatabaseConfigured(),
@@ -25,6 +29,13 @@ export async function GET() {
       aiProvider === "deepseek"
         ? process.env.DEEPSEEK_MODEL || process.env.AI_MODEL || "deepseek-v4-flash"
         : process.env.OPENAI_MODEL || process.env.AI_MODEL || "gpt-5-mini",
+    productSearchConfigured:
+      productSearchProvider === "rainforest"
+        ? Boolean(process.env.RAINFOREST_API_KEY)
+        : productSearchProvider === "external"
+          ? Boolean(process.env.PRODUCT_SEARCH_API_URL)
+          : false,
+    productSearchProvider,
     timestamp: new Date().toISOString(),
   });
 }

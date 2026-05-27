@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { MAX_COMPARE_COUNT } from "@/data/phase5";
+import { MAX_COMPARE_COUNT, normalizeCompareItems, type CompetitorItem } from "@/data/phase5";
 import { isAuthResponse, requireUser } from "@/lib/server/auth";
 import {
   getUserStateFromDb,
@@ -21,11 +21,8 @@ function unavailable() {
   );
 }
 
-function sanitizeIds(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
-    .slice(0, MAX_COMPARE_COUNT);
+function sanitizeItems(value: unknown): CompetitorItem[] {
+  return normalizeCompareItems(value).slice(0, MAX_COMPARE_COUNT);
 }
 
 function errorResponse(error: unknown) {
@@ -39,8 +36,9 @@ export async function GET() {
   if (!isDatabaseConfigured()) return unavailable();
 
   try {
-    const ids = (await getUserStateFromDb<string[]>(auth.id, STATE_KEY)) ?? [];
-    return NextResponse.json({ ok: true, database: true, ids: sanitizeIds(ids) });
+    const value = await getUserStateFromDb<unknown>(auth.id, STATE_KEY);
+    const items = sanitizeItems(value);
+    return NextResponse.json({ ok: true, database: true, items, ids: items.map((item) => item.id) });
   } catch (error) {
     return errorResponse(error);
   }
@@ -52,17 +50,17 @@ export async function PUT(request: Request) {
   if (!isDatabaseConfigured()) return unavailable();
 
   try {
-    const body = (await request.json()) as { ids?: unknown };
-    const ids = sanitizeIds(body.ids);
-    const saved = await saveUserStateToDb(auth.id, STATE_KEY, ids);
+    const body = (await request.json()) as { items?: unknown; ids?: unknown };
+    const items = sanitizeItems(body.items ?? body.ids);
+    const saved = sanitizeItems(await saveUserStateToDb(auth.id, STATE_KEY, items));
     await writeAuditLogToDb({
       userId: auth.id,
       action: "compare_items.saved",
       entityType: "user_state",
       entityId: STATE_KEY,
-      metadata: { count: ids.length },
+      metadata: { count: saved.length },
     });
-    return NextResponse.json({ ok: true, database: true, ids: sanitizeIds(saved) });
+    return NextResponse.json({ ok: true, database: true, items: saved, ids: saved.map((item) => item.id) });
   } catch (error) {
     return errorResponse(error);
   }

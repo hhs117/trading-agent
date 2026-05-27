@@ -43,6 +43,7 @@ export type StoreRecord = {
 export type SyncEntityType = "product" | "order";
 export type SyncSource = "manual" | "api" | "csv";
 export type SyncRunStatus = "success" | "partial" | "failed";
+export type ListingPublishStatus = "draft" | "validated" | "dry_run" | "publishing" | "published" | "failed";
 
 export type SyncedStoreProductInput = {
   externalProductId: string;
@@ -97,6 +98,21 @@ export type SyncRunRecord = {
   metadata: Record<string, unknown>;
   startedAt: string;
   finishedAt: string;
+};
+
+export type ListingPublishJobRecord = {
+  id: string;
+  storeId: string | null;
+  productId: string | null;
+  platform: string;
+  status: ListingPublishStatus;
+  draft: Record<string, unknown>;
+  validationIssues: unknown[];
+  externalProductId: string | null;
+  errorMessage: string | null;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
 };
 
 type DbGenerationRow = {
@@ -216,6 +232,21 @@ type DbSyncRunRow = {
   finished_at: Date | string;
 };
 
+type DbListingPublishJobRow = {
+  id: string;
+  store_id: string | null;
+  product_id: string | null;
+  platform: string;
+  status: ListingPublishStatus;
+  draft: Record<string, unknown>;
+  validation_issues: unknown[];
+  external_product_id: string | null;
+  error_message: string | null;
+  created_by: string | null;
+  created_at: Date | string;
+  updated_at: Date | string;
+};
+
 let pool: Pool | null = null;
 let schemaReady: Promise<void> | null = null;
 
@@ -282,6 +313,24 @@ async function createSchema() {
     CREATE INDEX IF NOT EXISTS seapick_stores_platform_market_idx
       ON seapick_stores (platform, market);
 
+    CREATE TABLE IF NOT EXISTS seapick_store_auth_tokens (
+      id TEXT PRIMARY KEY,
+      store_id TEXT REFERENCES seapick_stores(id) ON DELETE CASCADE,
+      platform TEXT NOT NULL,
+      external_shop_id TEXT,
+      access_token_encrypted TEXT,
+      refresh_token_encrypted TEXT,
+      access_token_expires_at TIMESTAMPTZ,
+      refresh_token_expires_at TIMESTAMPTZ,
+      scopes JSONB NOT NULL DEFAULT '[]'::jsonb,
+      raw JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS seapick_store_auth_tokens_store_platform_idx
+      ON seapick_store_auth_tokens (store_id, platform);
+
     CREATE TABLE IF NOT EXISTS seapick_store_products (
       id TEXT PRIMARY KEY,
       store_id TEXT NOT NULL REFERENCES seapick_stores(id) ON DELETE CASCADE,
@@ -342,6 +391,24 @@ async function createSchema() {
     CREATE INDEX IF NOT EXISTS seapick_sync_runs_store_created_idx
       ON seapick_sync_runs (store_id, finished_at DESC);
 
+    CREATE TABLE IF NOT EXISTS seapick_listing_publish_jobs (
+      id TEXT PRIMARY KEY,
+      store_id TEXT REFERENCES seapick_stores(id) ON DELETE SET NULL,
+      product_id TEXT,
+      platform TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('draft', 'validated', 'dry_run', 'publishing', 'published', 'failed')),
+      draft JSONB NOT NULL,
+      validation_issues JSONB NOT NULL DEFAULT '[]'::jsonb,
+      external_product_id TEXT,
+      error_message TEXT,
+      created_by TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS seapick_listing_publish_jobs_store_updated_idx
+      ON seapick_listing_publish_jobs (store_id, updated_at DESC);
+
     CREATE TABLE IF NOT EXISTS seapick_scoring_records (
       id TEXT PRIMARY KEY,
       product_id TEXT NOT NULL,
@@ -400,7 +467,222 @@ async function createSchema() {
 
     ALTER TABLE seapick_users
       ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
+
+    CREATE TABLE IF NOT EXISTS seapick_platform_market_signals (
+      id TEXT PRIMARY KEY,
+      platform TEXT NOT NULL,
+      category TEXT NOT NULL,
+      country TEXT,
+      provider TEXT NOT NULL,
+      payload JSONB NOT NULL,
+      fetched_at TIMESTAMPTZ NOT NULL,
+      expires_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (platform, category, country, provider)
+    );
+
+    CREATE INDEX IF NOT EXISTS seapick_platform_market_signals_lookup_idx
+      ON seapick_platform_market_signals (platform, category, country);
   `);
+}
+
+export type PlatformMarketSignalRow = {
+  id: string;
+  platform: string;
+  category: string;
+  country: string | null;
+  provider: string;
+  payload: Record<string, unknown>;
+  fetchedAt: string;
+  expiresAt: string | null;
+};
+
+type DbPlatformMarketSignalRow = {
+  id: string;
+  platform: string;
+  category: string;
+  country: string | null;
+  provider: string;
+  payload: Record<string, unknown>;
+  fetched_at: Date | string;
+  expires_at: Date | string | null;
+};
+
+function normalizeMarketSignal(row: DbPlatformMarketSignalRow): PlatformMarketSignalRow {
+  return {
+    id: row.id,
+    platform: row.platform,
+    category: row.category,
+    country: row.country,
+    provider: row.provider,
+    payload: row.payload,
+    fetchedAt: toIso(row.fetched_at)!,
+    expiresAt: toIso(row.expires_at),
+  };
+}
+
+export async function getMarketSignalFromCache(input: {
+  platform: string;
+  category: string;
+  country: string | null;
+  provider: string;
+}): Promise<PlatformMarketSignalRow | null> {
+  await ensureDatabaseSchema();
+  const result = await getPool().query<DbPlatformMarketSignalRow>(
+    `
+      SELECT id, platform, category, country, provider, payload, fetched_at, expires_at
+      FROM seapick_platform_market_signals
+      WHERE platform = $1 AND category = $2 AND provider = $3
+        AND (($4::text IS NULL AND country IS NULL) OR country = $4)
+        AND (expires_at IS NULL OR expires_at > NOW())
+      LIMIT 1
+    `,
+    [input.platform, input.category, input.provider, input.country]
+  );
+  return result.rows[0] ? normalizeMarketSignal(result.rows[0]) : null;
+}
+
+export async function upsertMarketSignal(input: {
+  platform: string;
+  category: string;
+  country: string | null;
+  provider: string;
+  payload: Record<string, unknown>;
+  fetchedAt: string;
+  expiresAt: string | null;
+}): Promise<PlatformMarketSignalRow> {
+  await ensureDatabaseSchema();
+  const result = await getPool().query<DbPlatformMarketSignalRow>(
+    `
+      INSERT INTO seapick_platform_market_signals (
+        id, platform, category, country, provider, payload, fetched_at, expires_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::timestamptz, $8::timestamptz)
+      ON CONFLICT (platform, category, country, provider)
+      DO UPDATE SET
+        payload = EXCLUDED.payload,
+        fetched_at = EXCLUDED.fetched_at,
+        expires_at = EXCLUDED.expires_at
+      RETURNING id, platform, category, country, provider, payload, fetched_at, expires_at
+    `,
+    [
+      crypto.randomUUID(),
+      input.platform,
+      input.category,
+      input.country,
+      input.provider,
+      JSON.stringify(input.payload),
+      input.fetchedAt,
+      input.expiresAt,
+    ]
+  );
+  return normalizeMarketSignal(result.rows[0]);
+}
+
+export type StorePerformanceRow = {
+  platform: string;
+  storeCount: number;
+  productCount: number;
+  orderCount: number;
+  totalGmvUsd: number | null;
+  averagePriceUsd: number | null;
+  orderCount30d: number;
+  gmv30dUsd: number | null;
+  orderCountPrev30d: number;
+  gmvPrev30dUsd: number | null;
+  topMarkets: Array<{ country: string; orderCount: number }>;
+  lastSyncedAt: string | null;
+};
+
+export async function aggregateStorePerformance(): Promise<StorePerformanceRow[]> {
+  await ensureDatabaseSchema();
+  const db = getPool();
+
+  const storeAgg = await db.query<{
+    platform: string;
+    store_count: string;
+    product_count: string;
+    average_price: string | null;
+  }>(
+    `
+      SELECT s.platform,
+             COUNT(DISTINCT s.id)::text AS store_count,
+             COUNT(p.id)::text AS product_count,
+             AVG(p.price)::text AS average_price
+      FROM seapick_stores s
+      LEFT JOIN seapick_store_products p ON p.store_id = s.id
+      WHERE s.is_active = TRUE
+      GROUP BY s.platform
+      ORDER BY s.platform ASC
+    `
+  );
+
+  const orderAgg = await db.query<{
+    platform: string;
+    order_count: string;
+    total_gmv: string | null;
+    order_count_30d: string;
+    gmv_30d: string | null;
+    order_count_prev_30d: string;
+    gmv_prev_30d: string | null;
+    last_synced_at: Date | string | null;
+  }>(
+    `
+      SELECT s.platform,
+             COUNT(o.id)::text AS order_count,
+             COALESCE(SUM(o.total_amount), 0)::text AS total_gmv,
+             COUNT(o.id) FILTER (WHERE o.placed_at >= NOW() - INTERVAL '30 days')::text AS order_count_30d,
+             COALESCE(SUM(o.total_amount) FILTER (WHERE o.placed_at >= NOW() - INTERVAL '30 days'), 0)::text AS gmv_30d,
+             COUNT(o.id) FILTER (WHERE o.placed_at >= NOW() - INTERVAL '60 days' AND o.placed_at < NOW() - INTERVAL '30 days')::text AS order_count_prev_30d,
+             COALESCE(SUM(o.total_amount) FILTER (WHERE o.placed_at >= NOW() - INTERVAL '60 days' AND o.placed_at < NOW() - INTERVAL '30 days'), 0)::text AS gmv_prev_30d,
+             MAX(o.synced_at) AS last_synced_at
+      FROM seapick_stores s
+      LEFT JOIN seapick_orders o ON o.store_id = s.id
+      WHERE s.is_active = TRUE
+      GROUP BY s.platform
+    `
+  );
+
+  const marketAgg = await db.query<{
+    platform: string;
+    buyer_country: string;
+    order_count: string;
+  }>(
+    `
+      SELECT s.platform, o.buyer_country, COUNT(o.id)::text AS order_count
+      FROM seapick_stores s
+      JOIN seapick_orders o ON o.store_id = s.id
+      WHERE s.is_active = TRUE AND o.buyer_country IS NOT NULL
+      GROUP BY s.platform, o.buyer_country
+      ORDER BY COUNT(o.id) DESC
+    `
+  );
+
+  const orderByPlatform = new Map(orderAgg.rows.map((row) => [row.platform, row]));
+  const marketsByPlatform = new Map<string, Array<{ country: string; orderCount: number }>>();
+  for (const row of marketAgg.rows) {
+    const list = marketsByPlatform.get(row.platform) ?? [];
+    if (list.length < 5) list.push({ country: row.buyer_country, orderCount: Number(row.order_count) });
+    marketsByPlatform.set(row.platform, list);
+  }
+
+  return storeAgg.rows.map((store) => {
+    const order = orderByPlatform.get(store.platform);
+    return {
+      platform: store.platform,
+      storeCount: Number(store.store_count),
+      productCount: Number(store.product_count),
+      orderCount: order ? Number(order.order_count) : 0,
+      totalGmvUsd: order?.total_gmv ? Number(order.total_gmv) : null,
+      averagePriceUsd: store.average_price === null ? null : Number(store.average_price),
+      orderCount30d: order ? Number(order.order_count_30d) : 0,
+      gmv30dUsd: order?.gmv_30d ? Number(order.gmv_30d) : null,
+      orderCountPrev30d: order ? Number(order.order_count_prev_30d) : 0,
+      gmvPrev30dUsd: order?.gmv_prev_30d ? Number(order.gmv_prev_30d) : null,
+      topMarkets: marketsByPlatform.get(store.platform) ?? [],
+      lastSyncedAt: order ? toIso(order.last_synced_at) : null,
+    };
+  });
 }
 
 export async function ensureDatabaseSchema() {
@@ -667,6 +949,23 @@ function normalizeSyncRun(row: DbSyncRunRow): SyncRunRecord {
   };
 }
 
+function normalizeListingPublishJob(row: DbListingPublishJobRow): ListingPublishJobRecord {
+  return {
+    id: row.id,
+    storeId: row.store_id,
+    productId: row.product_id,
+    platform: row.platform,
+    status: row.status,
+    draft: row.draft,
+    validationIssues: Array.isArray(row.validation_issues) ? row.validation_issues : [],
+    externalProductId: row.external_product_id,
+    errorMessage: row.error_message,
+    createdBy: row.created_by,
+    createdAt: toIso(row.created_at)!,
+    updatedAt: toIso(row.updated_at)!,
+  };
+}
+
 export async function listStoreProductsFromDb(storeId: string): Promise<StoreProductRecord[]> {
   await ensureDatabaseSchema();
   const result = await getPool().query<DbStoreProductRow>(
@@ -861,6 +1160,136 @@ export async function saveSyncRunToDb(input: {
     ]
   );
   return normalizeSyncRun(result.rows[0]);
+}
+
+export async function listListingPublishJobsFromDb(input: {
+  storeId?: string;
+  platform?: string;
+  limit?: number;
+} = {}): Promise<ListingPublishJobRecord[]> {
+  await ensureDatabaseSchema();
+  const conditions: string[] = [];
+  const values: unknown[] = [];
+
+  if (input.storeId) {
+    values.push(input.storeId);
+    conditions.push(`store_id = $${values.length}`);
+  }
+  if (input.platform) {
+    values.push(input.platform);
+    conditions.push(`LOWER(platform) = LOWER($${values.length})`);
+  }
+
+  const limit = Math.min(Math.max(input.limit ?? 100, 1), 500);
+  values.push(limit);
+
+  const result = await getPool().query<DbListingPublishJobRow>(
+    `
+      SELECT id, store_id, product_id, platform, status, draft, validation_issues,
+             external_product_id, error_message, created_by, created_at, updated_at
+      FROM seapick_listing_publish_jobs
+      ${conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""}
+      ORDER BY updated_at DESC
+      LIMIT $${values.length}
+    `,
+    values
+  );
+  return result.rows.map(normalizeListingPublishJob);
+}
+
+export async function createListingPublishJobInDb(input: {
+  storeId?: string | null;
+  productId?: string | null;
+  platform: string;
+  status: ListingPublishStatus;
+  draft: Record<string, unknown>;
+  validationIssues?: unknown[];
+  externalProductId?: string | null;
+  errorMessage?: string | null;
+  createdBy?: string | null;
+}): Promise<ListingPublishJobRecord> {
+  await ensureDatabaseSchema();
+  const result = await getPool().query<DbListingPublishJobRow>(
+    `
+      INSERT INTO seapick_listing_publish_jobs (
+        id, store_id, product_id, platform, status, draft, validation_issues,
+        external_product_id, error_message, created_by
+      )
+      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9, $10)
+      RETURNING id, store_id, product_id, platform, status, draft, validation_issues,
+                external_product_id, error_message, created_by, created_at, updated_at
+    `,
+    [
+      crypto.randomUUID(),
+      input.storeId ?? null,
+      input.productId ?? null,
+      input.platform,
+      input.status,
+      JSON.stringify(input.draft),
+      JSON.stringify(input.validationIssues ?? []),
+      input.externalProductId ?? null,
+      input.errorMessage ?? null,
+      input.createdBy ?? null,
+    ]
+  );
+  return normalizeListingPublishJob(result.rows[0]);
+}
+
+export async function updateListingPublishJobInDb(
+  id: string,
+  input: Partial<{
+    storeId: string | null;
+    productId: string | null;
+    platform: string;
+    status: ListingPublishStatus;
+    draft: Record<string, unknown>;
+    validationIssues: unknown[];
+    externalProductId: string | null;
+    errorMessage: string | null;
+  }>
+): Promise<ListingPublishJobRecord | null> {
+  await ensureDatabaseSchema();
+  const currentResult = await getPool().query<DbListingPublishJobRow>(
+    `
+      SELECT id, store_id, product_id, platform, status, draft, validation_issues,
+             external_product_id, error_message, created_by, created_at, updated_at
+      FROM seapick_listing_publish_jobs
+      WHERE id = $1
+    `,
+    [id]
+  );
+  const current = currentResult.rows[0];
+  if (!current) return null;
+
+  const result = await getPool().query<DbListingPublishJobRow>(
+    `
+      UPDATE seapick_listing_publish_jobs
+      SET store_id = $2,
+          product_id = $3,
+          platform = $4,
+          status = $5,
+          draft = $6::jsonb,
+          validation_issues = $7::jsonb,
+          external_product_id = $8,
+          error_message = $9,
+          updated_at = NOW()
+      WHERE id = $1
+      RETURNING id, store_id, product_id, platform, status, draft, validation_issues,
+                external_product_id, error_message, created_by, created_at, updated_at
+    `,
+    [
+      id,
+      input.storeId === undefined ? current.store_id : input.storeId,
+      input.productId === undefined ? current.product_id : input.productId,
+      input.platform ?? current.platform,
+      input.status ?? current.status,
+      JSON.stringify(input.draft ?? current.draft),
+      JSON.stringify(input.validationIssues ?? current.validation_issues ?? []),
+      input.externalProductId === undefined ? current.external_product_id : input.externalProductId,
+      input.errorMessage === undefined ? current.error_message : input.errorMessage,
+    ]
+  );
+  return normalizeListingPublishJob(result.rows[0]);
 }
 
 export async function listSyncRunsFromDb(input: {

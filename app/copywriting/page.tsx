@@ -46,13 +46,13 @@ type HistoryRecord = {
 };
 
 const initialInput: CopywritingInput = {
-  title: "便携式折叠收纳包",
-  sellingPoints: "大容量、防水面料、可折叠、旅行收纳、轻便耐用",
-  description: "适合短途旅行、健身和日常通勤，可以放衣物、洗漱用品和电子配件。",
+  title: "",
+  sellingPoints: "",
+  description: "",
   platform: "TikTok Shop",
   market: "美国",
   language: "英语",
-  style: "TikTok 爆款型",
+  style: "简洁型",
 };
 
 function joinResult(result: CopywritingResult) {
@@ -69,7 +69,7 @@ function joinResult(result: CopywritingResult) {
   ].join("\n");
 }
 
-function mockGenerateCopywriting(input: CopywritingInput): CopywritingResult {
+function buildLocalDraftCopywriting(input: CopywritingInput): CopywritingResult {
   const title = input.title.trim() || "跨境热卖商品";
   const points = input.sellingPoints
     .split(/[、,，\n]/)
@@ -161,6 +161,7 @@ export default function CopywritingPage() {
   const [result, setResult] = useState<CopywritingResult | null>(null);
   const [history, setHistory] = useState<HistoryRecord[]>([]);
   const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -193,6 +194,7 @@ export default function CopywritingPage() {
 
   function updateInput<K extends keyof CopywritingInput>(key: K, value: CopywritingInput[K]) {
     setInput((prev) => ({ ...prev, [key]: value }));
+    if (error) setError("");
   }
 
   function saveRecord(nextResult: CopywritingResult) {
@@ -213,9 +215,14 @@ export default function CopywritingPage() {
 
   async function handleGenerate() {
     setGenerating(true);
+    setError("");
     try {
       const aiResult = await generateCopywritingWithAi(input);
-      const nextResult = aiResult ?? mockGenerateCopywriting(input);
+      if (!aiResult) {
+        setError("AI 文案接口暂不可用，请先检查 AI_PROVIDER 和 API Key 配置。");
+        return;
+      }
+      const nextResult = aiResult;
       setResult(nextResult);
       saveRecord(nextResult);
     } finally {
@@ -245,7 +252,7 @@ export default function CopywritingPage() {
       />
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[420px_1fr]">
-        <SectionCard title="生成参数" description="已接入 AI 接口，未配置密钥时自动回退到 mock。">
+        <SectionCard title="生成参数" description="已接入 AI 接口；未配置密钥时不会生成本地模拟文案。">
           <div className="space-y-4">
             <div>
               <FieldLabel>中文商品标题</FieldLabel>
@@ -340,6 +347,11 @@ export default function CopywritingPage() {
               </div>
             </div>
           </div>
+          {error && (
+            <div className="mt-4 rounded-xl border border-apple-red/20 bg-apple-red/5 px-4 py-3 text-[12.5px] text-apple-red">
+              {error}
+            </div>
+          )}
         </SectionCard>
 
         <div className="space-y-5">

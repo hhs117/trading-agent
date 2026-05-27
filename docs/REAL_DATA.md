@@ -28,6 +28,8 @@
   - 清空某类生成记录。
 - `POST /api/ai/copywriting`
   - 使用 AI 生成多语言商品文案。支持 DeepSeek 和 OpenAI；没有配置密钥时，前端会自动回退到 mock 生成。
+- `GET /api/search-products?keyword=xxx&platform=Shopee`
+  - 跨平台商品搜索统一入口。默认使用 mock 数据；配置外部搜索服务后可切换到真实结果。
 - `GET /api/stores`
   - 读取已配置店铺。
 - `POST /api/stores`
@@ -94,6 +96,47 @@ OPENAI_MODEL=gpt-5-mini
 AI_MODEL=deepseek-v4-flash
 ```
 
+商品搜索服务可选配置：
+
+```env
+PRODUCT_SEARCH_PROVIDER=mock
+PRODUCT_SEARCH_API_URL=
+PRODUCT_SEARCH_API_KEY=
+RAINFOREST_API_KEY=
+RAINFOREST_AMAZON_DOMAIN=amazon.com
+```
+
+当 `PRODUCT_SEARCH_PROVIDER=external` 时，系统会请求 `PRODUCT_SEARCH_API_URL`，并把 `keyword`、`platform`、`limit` 作为查询参数传过去。外部服务可以直接返回数组，也可以返回：
+
+```json
+{
+  "items": [
+    {
+      "id": "source-123",
+      "name": "Portable organizer bag",
+      "platform": "TikTok Shop",
+      "price": 12.99,
+      "monthlySales": 5380,
+      "rating": 4.8,
+      "reviewCount": 3220,
+      "shippingFrom": "Los Angeles, US",
+      "sellingPoints": ["large capacity", "waterproof"],
+      "competition": "high",
+      "estimatedProfitRate": 28,
+      "recommendationIndex": 8,
+      "keywords": ["organizer", "travel bag"]
+    }
+  ]
+}
+```
+
+当 `PRODUCT_SEARCH_PROVIDER=rainforest` 时，系统会直接调用 Rainforest API：
+
+- 目前仅接 Amazon 实时搜索。
+- `RAINFOREST_AMAZON_DOMAIN` 默认是 `amazon.com`。
+- 会优先返回 Rainforest 搜索结果里的 ASIN、标题、价格、评分、评论数和最近月购字段。
+- Amazon 搜索结果本身不提供真实成本，因此利润率会显示为“暂无”，后续需要结合采购价、运费和佣金再计算。
+
 ## 当前前端策略
 
 - 产品列表、新建、详情、删除：优先调用 `/api/products`。
@@ -104,7 +147,7 @@ AI_MODEL=deepseek-v4-flash
 - 多语言文案生成：优先调用 `/api/ai/copywriting`，失败时使用本地 mock。
 - 财务利润历史：优先调用 `/api/generation-records?kind=finance`。
 - 九宫格评分历史：优先调用 `/api/scoring-records`。
-- 竞品对比列表：优先调用 `/api/compare-items`，按账号保存。
+- 竞品对比列表：优先调用 `/api/compare-items`，按账号保存完整商品快照，支持动态搜索结果刷新后继续比较。
 - API 不可用或没有 `DATABASE_URL`：自动回退到 localStorage。
 
 ## 内部账号初始化
@@ -146,7 +189,6 @@ x-bootstrap-token: 你的 BOOTSTRAP_TOKEN
 - `/api/ai/image-prompts`
 - `/api/ai/image-review`
 - `/api/ai/customer-reply`
-- `/api/search-products`
 - `/api/platform-metrics`
 - `/api/logistics/:orderNo`
 - `/api/security/status`

@@ -15,10 +15,12 @@ import {
   Lightbulb,
   Grid3x3,
   Swords,
+  Store,
   Languages,
   Wand2,
   Calculator,
   ChevronRight,
+  Upload,
 } from "lucide-react";
 import {
   PolarAngleAxis,
@@ -35,10 +37,6 @@ import ProgressBar from "@/components/ui/ProgressBar";
 import RecommendationBadge from "@/components/RecommendationBadge";
 
 import {
-  deleteMockProduct,
-  getMockProductById,
-  getMockProducts,
-  upsertMockProduct,
   MOCK_MARKET_LABELS,
   STATUS_TONE,
   type MockProduct,
@@ -79,12 +77,7 @@ export default function ProductDetailPage() {
       const remoteProduct = await fetchApiProduct(params.id);
       if (!active) return;
 
-      if (remoteProduct !== undefined) {
-        if (remoteProduct) upsertMockProduct(remoteProduct);
-        setProduct(remoteProduct);
-      } else {
-        setProduct(getMockProductById(params.id) ?? null);
-      }
+      setProduct(remoteProduct ?? null);
       setLoaded(true);
     }
 
@@ -96,20 +89,13 @@ export default function ProductDetailPage() {
 
   async function refresh() {
     const remoteProduct = await fetchApiProduct(params.id);
-    if (remoteProduct !== undefined) {
-      if (remoteProduct) upsertMockProduct(remoteProduct);
-      setProduct(remoteProduct);
-      return;
-    }
-
-    setProduct(getMockProductById(params.id) ?? null);
+    setProduct(remoteProduct ?? null);
   }
 
   async function handleDelete() {
     if (!product) return;
     if (!confirm(`确认删除「${product.name}」？此操作不可撤销。`)) return;
     await deleteApiProduct(product.id);
-    deleteMockProduct(product.id);
     logActivity({
       type: "product_deleted",
       productId: product.id,
@@ -660,6 +646,20 @@ function QuickEntries({
       tone: "blue" as const,
     },
     {
+      icon: Upload,
+      label: "Shopee 草稿",
+      desc: "校验上架资料",
+      href: `/shopee?productId=${productId}`,
+      tone: "green" as const,
+    },
+    {
+      icon: Store,
+      label: "TikTok 草稿",
+      desc: "校验上架资料",
+      href: `/tiktok-shop?productId=${productId}`,
+      tone: "purple" as const,
+    },
+    {
       icon: Lightbulb,
       label: "产品优化",
       desc: "下一步可执行清单",
@@ -716,6 +716,3 @@ function toneEntryBg(tone: "blue" | "green" | "orange" | "purple"): string {
     purple: "bg-purple-100 text-purple-600",
   }[tone];
 }
-
-// keep getMockProducts import for tree-shaking determinism on dev
-void getMockProducts;

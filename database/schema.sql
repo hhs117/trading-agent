@@ -36,6 +36,24 @@ CREATE TABLE IF NOT EXISTS seapick_stores (
 CREATE INDEX IF NOT EXISTS seapick_stores_platform_market_idx
   ON seapick_stores (platform, market);
 
+CREATE TABLE IF NOT EXISTS seapick_store_auth_tokens (
+  id TEXT PRIMARY KEY,
+  store_id TEXT REFERENCES seapick_stores(id) ON DELETE CASCADE,
+  platform TEXT NOT NULL,
+  external_shop_id TEXT,
+  access_token_encrypted TEXT,
+  refresh_token_encrypted TEXT,
+  access_token_expires_at TIMESTAMPTZ,
+  refresh_token_expires_at TIMESTAMPTZ,
+  scopes JSONB NOT NULL DEFAULT '[]'::jsonb,
+  raw JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS seapick_store_auth_tokens_store_platform_idx
+  ON seapick_store_auth_tokens (store_id, platform);
+
 CREATE TABLE IF NOT EXISTS seapick_store_products (
   id TEXT PRIMARY KEY,
   store_id TEXT NOT NULL REFERENCES seapick_stores(id) ON DELETE CASCADE,
@@ -96,6 +114,24 @@ CREATE TABLE IF NOT EXISTS seapick_sync_runs (
 CREATE INDEX IF NOT EXISTS seapick_sync_runs_store_created_idx
   ON seapick_sync_runs (store_id, finished_at DESC);
 
+CREATE TABLE IF NOT EXISTS seapick_listing_publish_jobs (
+  id TEXT PRIMARY KEY,
+  store_id TEXT REFERENCES seapick_stores(id) ON DELETE SET NULL,
+  product_id TEXT,
+  platform TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('draft', 'validated', 'dry_run', 'publishing', 'published', 'failed')),
+  draft JSONB NOT NULL,
+  validation_issues JSONB NOT NULL DEFAULT '[]'::jsonb,
+  external_product_id TEXT,
+  error_message TEXT,
+  created_by TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS seapick_listing_publish_jobs_store_updated_idx
+  ON seapick_listing_publish_jobs (store_id, updated_at DESC);
+
 CREATE TABLE IF NOT EXISTS seapick_scoring_records (
   id TEXT PRIMARY KEY,
   product_id TEXT NOT NULL,
@@ -151,3 +187,19 @@ CREATE TABLE IF NOT EXISTS seapick_audit_logs (
 
 CREATE INDEX IF NOT EXISTS seapick_audit_logs_created_idx
   ON seapick_audit_logs (created_at DESC);
+
+CREATE TABLE IF NOT EXISTS seapick_platform_market_signals (
+  id TEXT PRIMARY KEY,
+  platform TEXT NOT NULL,
+  category TEXT NOT NULL,
+  country TEXT,
+  provider TEXT NOT NULL,
+  payload JSONB NOT NULL,
+  fetched_at TIMESTAMPTZ NOT NULL,
+  expires_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (platform, category, country, provider)
+);
+
+CREATE INDEX IF NOT EXISTS seapick_platform_market_signals_lookup_idx
+  ON seapick_platform_market_signals (platform, category, country);

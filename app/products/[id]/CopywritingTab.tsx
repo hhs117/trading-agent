@@ -3,11 +3,11 @@
 import { useState } from "react";
 import { Check, Copy, Sparkles } from "lucide-react";
 
-import { generateCopywriting } from "@/lib/mockAI";
 import { LANGUAGE_LABELS, type Copywriting, type Language } from "@/lib/types";
-import { upsertMockProduct, type MockProduct } from "@/data/mockData";
+import type { MockProduct } from "@/data/mockData";
 import { logActivity } from "@/data/activity";
 import { saveApiProduct } from "@/lib/api/products";
+import { generateCopywritingWithAi } from "@/lib/api/ai";
 
 const LANGS: Language[] = ["en", "th", "vi", "id", "ms"];
 
@@ -20,21 +20,35 @@ export default function CopywritingTab({
 }) {
   const [language, setLanguage] = useState<Language>("en");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const [copywritings, setCopywritings] = useState<Copywriting[]>(product.copywritings ?? []);
 
   const current = copywritings.find((c) => c.language === language);
 
   async function handleGenerate() {
     setLoading(true);
+    setError("");
     try {
-      const result = await generateCopywriting(
-        {
-          name: product.name,
-          category: product.category,
-          targetMarket: product.targetMarket,
-        },
-        language
-      );
+      const aiResult = await generateCopywritingWithAi({
+        title: product.name,
+        sellingPoints: product.notes ?? "",
+        description: product.notes ?? "",
+        platform: product.platform,
+        market: product.targetMarket.join(", "),
+        language: LANGUAGE_LABELS[language],
+        style: "简洁型",
+      });
+      if (!aiResult) {
+        setError("AI 文案接口暂不可用，请先检查 AI_PROVIDER 和 API Key 配置。");
+        return;
+      }
+      const result: Copywriting = {
+        language,
+        title: aiResult.productTitle,
+        bullets: aiResult.bulletPoints,
+        description: aiResult.detailDescription,
+        keywords: aiResult.seoKeywords,
+      };
       const next = [...copywritings.filter((c) => c.language !== language), result];
       setCopywritings(next);
       const nextProduct: MockProduct = {
@@ -43,7 +57,10 @@ export default function CopywritingTab({
         updatedAt: new Date().toISOString(),
       };
       const savedProduct = await saveApiProduct(nextProduct);
-      upsertMockProduct(savedProduct ?? nextProduct);
+      if (!savedProduct) {
+        setError("文案已生成，但保存到产品数据库失败，请检查数据库连接。");
+        return;
+      }
       logActivity({
         type: "copywriting_generated",
         productId: product.id,
@@ -85,6 +102,11 @@ export default function CopywritingTab({
           {loading ? "生成中…" : current ? "重新生成" : "一键生成"}
         </button>
       </div>
+      {error && (
+        <div className="rounded-xl border border-apple-red/20 bg-apple-red/5 px-4 py-3 text-[12.5px] text-apple-red">
+          {error}
+        </div>
+      )}
 
       {!current ? (
         <div className="text-center py-16 text-apple-gray-300 text-[13px]">

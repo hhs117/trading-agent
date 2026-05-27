@@ -99,10 +99,12 @@ const SEED_ACTIVITY: ActivityEntry[] = [
 ];
 
 export function getActivityLog(): ActivityEntry[] {
-  const data = getStorageData<ActivityEntry[] | null>(STORAGE_KEY, null);
-  if (data && data.length > 0) return data;
-  setStorageData(STORAGE_KEY, SEED_ACTIVITY);
-  return SEED_ACTIVITY;
+  const data = getStorageData<ActivityEntry[] | null>(STORAGE_KEY, null) ?? [];
+  const cleaned = data.filter((entry) => !entry.id.startsWith("act-seed-"));
+  if (cleaned.length !== data.length) {
+    setStorageData(STORAGE_KEY, cleaned);
+  }
+  return cleaned;
 }
 
 export function logActivity(entry: Omit<ActivityEntry, "id" | "timestamp">): void {

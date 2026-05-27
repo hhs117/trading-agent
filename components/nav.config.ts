@@ -10,6 +10,7 @@ import {
   MessageSquare,
   Package,
   Plus,
+  Rocket,
   Search,
   Settings,
   Store,
@@ -69,6 +70,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/optimization", label: "产品优化建议", icon: Lightbulb },
       { href: "/listing", label: "上品辅助", icon: Upload },
+      { href: "/publish-center", label: "发布中台", icon: Rocket },
       { href: "/chatbot", label: "客服机器人", icon: MessageSquare },
       { href: "/logistics", label: "物流跟进", icon: Truck },
     ],
@@ -88,6 +90,8 @@ export const NAV_GROUPS: NavGroup[] = [
     title: "系统",
     items: [
       { href: "/stores", label: "店铺管理", icon: Store },
+      { href: "/shopee", label: "Shopee 接入", icon: Store, matchPrefix: "/shopee" },
+      { href: "/tiktok-shop", label: "TikTok Shop 接入", icon: Store, matchPrefix: "/tiktok-shop" },
       { href: "/settings", label: "设置", icon: Settings },
     ],
   },

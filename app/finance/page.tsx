@@ -51,16 +51,16 @@ type FinanceRecord = {
 };
 
 const initialInput: FinanceInput = {
-  procurementCost: 18,
-  salePrice: 39.9,
-  domesticShipping: 3,
-  internationalShipping: 7.5,
-  platformCommissionRate: 8,
-  paymentFeeRate: 3,
-  adFee: 4,
-  packagingFee: 1.2,
-  refundLoss: 1.5,
-  otherCost: 0.8,
+  procurementCost: 0,
+  salePrice: 0,
+  domesticShipping: 0,
+  internationalShipping: 0,
+  platformCommissionRate: 0,
+  paymentFeeRate: 0,
+  adFee: 0,
+  packagingFee: 0,
+  refundLoss: 0,
+  otherCost: 0,
 };
 
 const money = new Intl.NumberFormat("zh-CN", {

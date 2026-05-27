@@ -11,7 +11,6 @@ import { Button } from "@/components/ui/Button";
 
 import {
   generateMockProductId,
-  upsertMockProduct,
   MOCK_CATEGORIES,
   MOCK_PLATFORM_OPTIONS,
   MOCK_STATUS_OPTIONS,
@@ -73,6 +72,7 @@ export default function NewProductPage() {
   const [form, setForm] = useState<FormState>(INITIAL);
   const [stores, setStores] = useState<StoreRecord[]>([]);
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
+  const [submitError, setSubmitError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -91,6 +91,7 @@ export default function NewProductPage() {
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }));
     if (errors[key]) setErrors((e) => ({ ...e, [key]: undefined }));
+    if (submitError) setSubmitError("");
   }
 
   function toggleMarket(code: string) {
@@ -181,9 +182,7 @@ export default function NewProductPage() {
       name: form.name.trim(),
       category: form.category,
       platform: form.platform,
-      image:
-        form.image.trim() ||
-        `https://picsum.photos/seed/${encodeURIComponent(id)}/400/400`,
+      image: form.image.trim(),
       costPrice: parseFloat(form.costPrice),
       salePrice: parseFloat(form.salePrice),
       shippingCost: form.shippingCost ? parseFloat(form.shippingCost) : 0,
@@ -201,14 +200,18 @@ export default function NewProductPage() {
       notes: form.notes.trim() || undefined,
     };
     const savedProduct = await createApiProduct(product);
-    upsertMockProduct(savedProduct ?? product);
+    if (!savedProduct) {
+      setSubmitError("保存失败：当前没有可用的产品数据库接口，请先检查登录状态和 DATABASE_URL。");
+      setSubmitting(false);
+      return;
+    }
     logActivity({
       type: "product_created",
-      productId: savedProduct?.id ?? id,
-      productName: savedProduct?.name ?? product.name,
-      detail: `新建产品并设为「${savedProduct?.status ?? product.status}」`,
+      productId: savedProduct.id,
+      productName: savedProduct.name,
+      detail: `新建产品并设为「${savedProduct.status}」`,
     });
-    router.push(`/products/${savedProduct?.id ?? id}`);
+    router.push(`/products/${savedProduct.id}`);
   }
 
   return (
@@ -409,6 +412,11 @@ export default function NewProductPage() {
       </SectionCard>
 
       {/* === Actions === */}
+      {submitError && (
+        <div className="rounded-xl border border-apple-red/20 bg-apple-red/5 px-4 py-3 text-[12.5px] text-apple-red">
+          {submitError}
+        </div>
+      )}
       <div className="flex items-center justify-end gap-3 sticky bottom-3 sm:bottom-4">
         <Link
           href="/products"

@@ -37,16 +37,16 @@ type ListingResult = {
 };
 
 const initialInput: ListingInput = {
-  name: "便携式折叠收纳包",
-  category: "旅行收纳",
-  cost: 18,
-  price: 29.9,
-  stock: 500,
+  name: "",
+  category: "",
+  cost: 0,
+  price: 0,
+  stock: 0,
   platform: "TikTok Shop",
   market: "美国",
-  supplierUrl: "https://supplier.example.com/item/1001",
-  imageUrl: "https://picsum.photos/seed/listing-helper/600/600",
-  sellingPoint: "大容量、防水、可折叠、适合旅行健身和日常通勤",
+  supplierUrl: "",
+  imageUrl: "",
+  sellingPoint: "",
 };
 
 function generateListing(input: ListingInput): ListingResult {
@@ -134,7 +134,7 @@ export default function ListingPage() {
       />
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[430px_1fr]">
-        <SectionCard title="产品资料" description="这些字段会进入 mock 上架生成逻辑。">
+        <SectionCard title="产品资料" description="这些字段会进入上架资料生成逻辑；当前不会读取任何演示商品数据。">
           <div className="space-y-4">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>

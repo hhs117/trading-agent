@@ -30,7 +30,6 @@ import ProgressBar from "@/components/ui/ProgressBar";
 import { Button } from "@/components/ui/Button";
 
 import {
-  getMockProducts,
   STATUS_TONE,
   MOCK_MARKET_LABELS,
   type MockProduct,
@@ -93,7 +92,7 @@ function ScoringInner() {
       ]);
       if (!active) return;
 
-      const nextProducts = remoteProducts ?? getMockProducts();
+      const nextProducts = remoteProducts ?? [];
       setProducts(nextProducts);
       setRecords(remoteRecords ?? getScoringRecords());
 

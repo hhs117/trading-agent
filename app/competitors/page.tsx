@@ -14,12 +14,12 @@ import {
   formatUsd,
   getCompareItems,
   removeCompareItem,
-  saveCompareIds,
+  saveCompareItems,
   subscribeCompareItems,
   type CompetitionLevel,
   type CompetitorItem,
 } from "@/data/phase5";
-import { fetchApiCompareIds, saveApiCompareIds } from "@/lib/api/compareItems";
+import { fetchApiCompareItems, saveApiCompareItems } from "@/lib/api/compareItems";
 
 const COMPETITION_VALUE: Record<CompetitionLevel, number> = {
   low: 1,
@@ -31,6 +31,18 @@ function competitionTone(level: CompetitionLevel): "green" | "orange" | "red" {
   return level === "low" ? "green" : level === "medium" ? "orange" : "red";
 }
 
+function validNumbers(values: Array<number | null>) {
+  return values.filter((value): value is number => value !== null);
+}
+
+function formatOptionalMoney(value: number | null) {
+  return value === null ? "暂无" : formatUsd(value);
+}
+
+function formatOptionalNumber(value: number | null) {
+  return value === null ? "暂无" : value.toLocaleString();
+}
+
 export default function CompetitorsPage() {
   const [items, setItems] = useState<CompetitorItem[]>([]);
 
@@ -38,10 +50,10 @@ export default function CompetitorsPage() {
     let active = true;
 
     async function loadItems() {
-      const remoteIds = await fetchApiCompareIds();
+      const remoteItems = await fetchApiCompareItems();
       if (!active) return;
-      if (remoteIds) {
-        saveCompareIds(remoteIds);
+      if (remoteItems) {
+        saveCompareItems(remoteItems);
       }
       setItems(getCompareItems());
     }
@@ -58,14 +70,14 @@ export default function CompetitorsPage() {
     removeCompareItem(id);
     const nextItems = getCompareItems();
     setItems(nextItems);
-    void saveApiCompareIds(nextItems.map((item) => item.id));
+    void saveApiCompareItems(nextItems);
   }
 
   function handleClear() {
     if (!confirm("确认清空所有竞品对比项？此操作不可恢复。")) return;
     clearCompareItems();
     setItems([]);
-    void saveApiCompareIds([]);
+    void saveApiCompareItems([]);
   }
 
   return (
@@ -144,20 +156,20 @@ export default function CompetitorsPage() {
 function CompareTable({ items, onRemove }: { items: CompetitorItem[]; onRemove: (id: string) => void }) {
   const stats = useMemo(() => {
     const values = {
-      price: items.map((item) => item.price),
-      monthlySales: items.map((item) => item.monthlySales),
-      reviewCount: items.map((item) => item.reviewCount),
-      profit: items.map((item) => item.estimatedProfitRate),
+      price: validNumbers(items.map((item) => item.price)),
+      monthlySales: validNumbers(items.map((item) => item.monthlySales)),
+      reviewCount: validNumbers(items.map((item) => item.reviewCount)),
+      profit: validNumbers(items.map((item) => item.estimatedProfitRate)),
       competition: items.map((item) => COMPETITION_VALUE[item.competition]),
-      recommendation: items.map((item) => item.recommendationIndex),
+      recommendation: validNumbers(items.map((item) => item.recommendationIndex)),
     };
     return {
-      minPrice: Math.min(...values.price),
-      maxMonthlySales: Math.max(...values.monthlySales),
-      maxReviewCount: Math.max(...values.reviewCount),
-      maxProfit: Math.max(...values.profit),
+      minPrice: values.price.length ? Math.min(...values.price) : null,
+      maxMonthlySales: values.monthlySales.length ? Math.max(...values.monthlySales) : null,
+      maxReviewCount: values.reviewCount.length ? Math.max(...values.reviewCount) : null,
+      maxProfit: values.profit.length ? Math.max(...values.profit) : null,
       minCompetition: Math.min(...values.competition),
-      maxRecommendation: Math.max(...values.recommendation),
+      maxRecommendation: values.recommendation.length ? Math.max(...values.recommendation) : null,
     };
   }, [items]);
 
@@ -196,26 +208,32 @@ function CompareTable({ items, onRemove }: { items: CompetitorItem[]; onRemove: 
           </thead>
           <tbody className="divide-y divide-apple-gray-100">
             <CompareRow label="价格">
-              {items.map((item) => <BestCell key={item.id} active={item.price === stats.minPrice} label="最低价">{formatUsd(item.price)}</BestCell>)}
+              {items.map((item) => <BestCell key={item.id} active={item.price !== null && item.price === stats.minPrice} label="最低价">{formatOptionalMoney(item.price)}</BestCell>)}
             </CompareRow>
             <CompareRow label="月销量">
-              {items.map((item) => <BestCell key={item.id} active={item.monthlySales === stats.maxMonthlySales} label="最高销量">{item.monthlySales.toLocaleString()}</BestCell>)}
+              {items.map((item) => <BestCell key={item.id} active={item.monthlySales !== null && item.monthlySales === stats.maxMonthlySales} label="最高销量">{formatOptionalNumber(item.monthlySales)}</BestCell>)}
             </CompareRow>
             <CompareRow label="评论数">
-              {items.map((item) => <BestCell key={item.id} active={item.reviewCount === stats.maxReviewCount} label="市场成熟">{item.reviewCount.toLocaleString()}</BestCell>)}
+              {items.map((item) => <BestCell key={item.id} active={item.reviewCount !== null && item.reviewCount === stats.maxReviewCount} label="市场成熟">{formatOptionalNumber(item.reviewCount)}</BestCell>)}
             </CompareRow>
             <CompareRow label="评分">
               {items.map((item) => (
                 <td key={item.id} className="px-4 py-3 align-top">
                   <span className="inline-flex items-center gap-0.5 font-semibold tabular-nums text-apple-gray-900">
-                    <Star className="h-3.5 w-3.5 fill-apple-orange text-apple-orange" />
-                    {item.rating.toFixed(1)}
+                    {item.rating === null ? (
+                      "暂无"
+                    ) : (
+                      <>
+                        <Star className="h-3.5 w-3.5 fill-apple-orange text-apple-orange" />
+                        {item.rating.toFixed(1)}
+                      </>
+                    )}
                   </span>
                 </td>
               ))}
             </CompareRow>
             <CompareRow label="利润率">
-              {items.map((item) => <BestCell key={item.id} active={item.estimatedProfitRate === stats.maxProfit} label="利润最高">{item.estimatedProfitRate}%</BestCell>)}
+              {items.map((item) => <BestCell key={item.id} active={item.estimatedProfitRate !== null && item.estimatedProfitRate === stats.maxProfit} label="利润最高">{item.estimatedProfitRate === null ? "暂无" : `${item.estimatedProfitRate}%`}</BestCell>)}
             </CompareRow>
             <CompareRow label="竞争强度">
               {items.map((item) => (
@@ -226,7 +244,7 @@ function CompareTable({ items, onRemove }: { items: CompetitorItem[]; onRemove: 
               ))}
             </CompareRow>
             <CompareRow label="推荐指数">
-              {items.map((item) => <BestCell key={item.id} active={item.recommendationIndex === stats.maxRecommendation} label="推荐最高">{item.recommendationIndex}/10</BestCell>)}
+              {items.map((item) => <BestCell key={item.id} active={item.recommendationIndex !== null && item.recommendationIndex === stats.maxRecommendation} label="推荐最高">{item.recommendationIndex === null ? "暂无" : `${item.recommendationIndex}/10`}</BestCell>)}
             </CompareRow>
             <CompareRow label="主要卖点">
               {items.map((item) => (
@@ -274,27 +292,30 @@ function buildSuggestions(items: CompetitorItem[]): Suggestion[] {
   if (items.length === 0) return [];
 
   const suggestions: Suggestion[] = [];
-  const prices = items.map((item) => item.price);
-  const minPrice = Math.min(...prices);
-  const maxPrice = Math.max(...prices);
-  const avgPrice = prices.reduce((sum, value) => sum + value, 0) / prices.length;
-  const avgReviews = items.reduce((sum, item) => sum + item.reviewCount, 0) / items.length;
-  const avgProfit = items.reduce((sum, item) => sum + item.estimatedProfitRate, 0) / items.length;
+  const prices = validNumbers(items.map((item) => item.price));
+  const reviewCounts = validNumbers(items.map((item) => item.reviewCount));
+  const profits = validNumbers(items.map((item) => item.estimatedProfitRate));
+  const recommendations = items.filter((item) => item.recommendationIndex !== null);
+  const minPrice = prices.length ? Math.min(...prices) : null;
+  const maxPrice = prices.length ? Math.max(...prices) : null;
+  const avgPrice = prices.length ? prices.reduce((sum, value) => sum + value, 0) / prices.length : null;
+  const avgReviews = reviewCounts.length ? reviewCounts.reduce((sum, value) => sum + value, 0) / reviewCounts.length : null;
+  const avgProfit = profits.length ? profits.reduce((sum, value) => sum + value, 0) / profits.length : null;
   const highCompetitionCount = items.filter((item) => item.competition === "high").length;
   const topPoints = buildPointMatrix(items).slice(0, 2).map((item) => item.text);
 
-  if ((items.length > 1 && (maxPrice - minPrice) / avgPrice < 0.2) || highCompetitionCount >= Math.ceil(items.length / 2)) {
+  if ((items.length > 1 && minPrice !== null && maxPrice !== null && avgPrice !== null && (maxPrice - minPrice) / avgPrice < 0.2) || highCompetitionCount >= Math.ceil(items.length / 2)) {
     suggestions.push({
       title: "价格竞争激烈，需要避开低价内卷",
       body:
-        items.length > 1
+        items.length > 1 && minPrice !== null && maxPrice !== null
           ? `当前对比组价格集中在 ${formatUsd(minPrice)} - ${formatUsd(maxPrice)}，且高竞争竞品较多，建议用材质、套装、场景图或售后承诺做差异化。`
           : "该竞品已处在高竞争区间，直接低价跟卖风险较高，建议从材质、套装、场景图或售后承诺做差异化。",
       tone: "orange",
     });
   }
 
-  if (avgReviews >= 2000) {
+  if (avgReviews !== null && avgReviews >= 2000) {
     suggestions.push({
       title: "评论数较多，市场成熟但竞争较强",
       body: `平均评论数约 ${Math.round(avgReviews).toLocaleString()}，说明买家教育充分，但新品需要更强首图和评价启动策略。`,
@@ -302,7 +323,7 @@ function buildSuggestions(items: CompetitorItem[]): Suggestion[] {
     });
   }
 
-  if (avgProfit >= 25) {
+  if (avgProfit !== null && avgProfit >= 25) {
     suggestions.push({
       title: "利润率较高，适合小批量测试",
       body: `平均预估利润率约 ${avgProfit.toFixed(0)}%，可以先用 100-300 件库存做小预算测试。`,
@@ -318,7 +339,7 @@ function buildSuggestions(items: CompetitorItem[]): Suggestion[] {
     });
   }
 
-  const best = items.slice().sort((a, b) => b.recommendationIndex - a.recommendationIndex)[0];
+  const best = recommendations.slice().sort((a, b) => (b.recommendationIndex ?? 0) - (a.recommendationIndex ?? 0))[0];
   if (best) {
     suggestions.push({
       title: `优先拆解 ${best.platform} 高推荐竞品`,

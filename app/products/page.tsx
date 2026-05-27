@@ -25,7 +25,6 @@ import { LinkButton } from "@/components/ui/Button";
 
 import {
   deleteMockProduct,
-  getMockProducts,
   MOCK_CATEGORIES,
   MOCK_PLATFORM_OPTIONS,
   MOCK_STATUS_OPTIONS,
@@ -66,7 +65,7 @@ function ProductListInner() {
     async function loadProducts() {
       const remoteProducts = await fetchApiProducts();
       if (!active) return;
-      setProducts(remoteProducts ?? getMockProducts());
+      setProducts(remoteProducts ?? []);
     }
 
     void loadProducts();
@@ -88,7 +87,7 @@ function ProductListInner() {
 
   async function reload() {
     const remoteProducts = await fetchApiProducts();
-    setProducts(remoteProducts ?? getMockProducts());
+    setProducts(remoteProducts ?? []);
   }
 
   async function handleDelete(p: MockProduct) {

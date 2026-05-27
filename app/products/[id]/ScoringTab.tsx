@@ -21,7 +21,7 @@ import {
   SCORE_DIMENSION_LABELS,
   type ScoreDimensions,
 } from "@/lib/types";
-import { upsertMockProduct, type MockProduct } from "@/data/mockData";
+import type { MockProduct } from "@/data/mockData";
 import { logActivity } from "@/data/activity";
 import { saveApiProduct } from "@/lib/api/products";
 
@@ -61,7 +61,7 @@ export default function ScoringTab({
       updatedAt: new Date().toISOString(),
     };
     const savedProduct = await saveApiProduct(nextProduct);
-    upsertMockProduct(savedProduct ?? nextProduct);
+    if (!savedProduct) return;
     logActivity({
       type: "scoring_completed",
       productId: product.id,

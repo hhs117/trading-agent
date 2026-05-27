@@ -30,8 +30,6 @@ import { LinkButton } from "@/components/ui/Button";
 import EmptyState from "@/components/EmptyState";
 
 import {
-  getMockProducts,
-  getMockPlatforms,
   STATUS_TONE,
   type MockProduct,
   type PlatformInfo,
@@ -84,11 +82,11 @@ export default function DashboardPage() {
     async function loadProducts() {
       const remoteProducts = await fetchApiProducts();
       if (!active) return;
-      setProducts(remoteProducts ?? getMockProducts());
+      setProducts(remoteProducts ?? []);
     }
 
     void loadProducts();
-    setPlatforms(getMockPlatforms());
+    setPlatforms([]);
     setActivity(getActivityLog());
 
     return () => {

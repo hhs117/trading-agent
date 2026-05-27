@@ -27,7 +27,7 @@ type ReviewResult = {
   aiPrompt: string;
 };
 
-function mockReview(issues: string[], targetCountry: string, platform: string, productName: string): ReviewResult {
+function buildLocalImageReviewDraft(issues: string[], targetCountry: string, platform: string, productName: string): ReviewResult {
   const product = productName.trim() || "当前商品图片";
   const issueText = issues.join("、");
 
@@ -93,20 +93,23 @@ function resultToText(result: ReviewResult) {
 }
 
 export default function ImageReviewPage() {
-  const [productName, setProductName] = useState("便携式折叠收纳包");
-  const [targetCountry, setTargetCountry] = useState("美国");
+  const [productName, setProductName] = useState("");
+  const [targetCountry, setTargetCountry] = useState("");
   const [platform, setPlatform] = useState("Amazon");
-  const [selectedIssues, setSelectedIssues] = useState<string[]>(["背景杂乱", "卖点不突出", "主体不突出"]);
+  const [selectedIssues, setSelectedIssues] = useState<string[]>([]);
   const [result, setResult] = useState<ReviewResult | null>(null);
+  const [message, setMessage] = useState("");
 
   const canGenerate = useMemo(() => selectedIssues.length > 0, [selectedIssues]);
 
   function toggleIssue(issue: string) {
+    if (message) setMessage("");
     setSelectedIssues((prev) => (prev.includes(issue) ? prev.filter((item) => item !== issue) : [...prev, issue]));
   }
 
   function handleGenerate() {
-    setResult(mockReview(selectedIssues, targetCountry, platform, productName));
+    setResult(null);
+    setMessage("图片纠错真实 AI 接口还没有接入，当前不会生成本地模拟结果。");
   }
 
   return (
@@ -114,7 +117,7 @@ export default function ImageReviewPage() {
       <PageHeader
         icon={ImageOff}
         title="美工图片纠错"
-        badge="Mock 审核"
+        badge="待接入 AI 接口"
         description="选择图片问题后，生成问题总结、优化建议、美工修改需求和可直接投喂 AI 作图工具的 prompt。"
         action={
           <Button icon={Sparkles} onClick={handleGenerate} disabled={!canGenerate}>
@@ -124,7 +127,7 @@ export default function ImageReviewPage() {
       />
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[420px_1fr]">
-        <SectionCard title="图片问题选择" description="当前阶段先用问题标签模拟图片审核结果。">
+        <SectionCard title="图片问题选择" description="接入真实图片审核接口后，会基于图片和问题标签生成纠错结果。">
           <div className="space-y-4">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
@@ -195,6 +198,11 @@ export default function ImageReviewPage() {
               </div>
             </div>
           </div>
+          {message && (
+            <div className="mt-4 rounded-xl border border-apple-orange/20 bg-apple-orange/5 px-4 py-3 text-[12.5px] text-apple-orange">
+              {message}
+            </div>
+          )}
         </SectionCard>
 
         <SectionCard

@@ -1,85 +1,83 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Check, ClipboardList, Copy, ImageIcon, LayoutTemplate, Sparkles, Video, Wand2 } from "lucide-react";
+import { Check, Copy, Download, ImageIcon, Loader2, Sparkles, Wand2 } from "lucide-react";
 
 import Badge from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import PageHeader from "@/components/ui/PageHeader";
 import SectionCard from "@/components/ui/SectionCard";
+import {
+  generateImageWithAi,
+  type GeneratedImage,
+  type ImageGenerationInput,
+} from "@/lib/api/imageGeneration";
 
-const PLATFORMS = ["Amazon", "Shopee", "Lazada", "TikTok Shop", "Instagram", "独立站"];
-const COUNTRIES = ["美国", "日本", "韩国", "泰国", "越南", "印尼", "西班牙", "墨西哥"];
-const GENERATION_TYPES = ["商品主图", "详情页图", "广告图", "社媒图", "商品短视频脚本"];
-const STYLES = ["欧美简洁风", "东南亚高饱和风", "日系清新风", "韩系精致风", "TikTok 爆款风", "Amazon 白底专业风"];
+const PLATFORMS = ["TikTok Shop", "Shopee", "Lazada", "Amazon", "Instagram", "独立站"];
+const MARKETS = ["美国", "英国", "泰国", "马来西亚", "菲律宾", "新加坡", "越南", "印尼"];
+const IMAGE_TYPES = ["商品主图", "详情页场景图", "广告图", "社媒图", "白底图", "透明背景素材"];
+const STYLES = ["欧美极简", "东南亚高饱和", "TikTok 爆款", "Amazon 专业白底", "生活方式摄影", "高级质感棚拍"];
+const SIZES: Array<NonNullable<ImageGenerationInput["size"]>> = ["1024x1024", "1024x1536", "1536x1024"];
+const QUALITIES: Array<NonNullable<ImageGenerationInput["quality"]>> = ["medium", "high", "low"];
+const BACKGROUNDS: Array<NonNullable<ImageGenerationInput["background"]>> = ["auto", "opaque", "transparent"];
 
-type PromptInput = {
+type FormState = {
   productName: string;
   category: string;
-  country: string;
   platform: string;
-  desiredStyle: string;
-  coreSellingPoint: string;
-  generationType: string;
+  market: string;
+  imageType: string;
+  style: string;
+  sellingPoints: string;
+  customPrompt: string;
+  size: NonNullable<ImageGenerationInput["size"]>;
+  quality: NonNullable<ImageGenerationInput["quality"]>;
+  background: NonNullable<ImageGenerationInput["background"]>;
 };
 
-type PromptResult = {
-  cnPrompt: string;
-  enPrompt: string;
-  heroComposition: string;
-  detailStructure: string[];
-  videoScript: string;
-  storyboard: string[];
-  cautions: string[];
-};
-
-const initialInput: PromptInput = {
-  productName: "便携式折叠收纳包",
-  category: "旅行收纳",
-  country: "美国",
+const initialForm: FormState = {
+  productName: "",
+  category: "",
   platform: "TikTok Shop",
-  desiredStyle: "TikTok 爆款风",
-  coreSellingPoint: "大容量、防水、可折叠、适合旅行和健身",
-  generationType: "商品短视频脚本",
+  market: "美国",
+  imageType: "商品主图",
+  style: "生活方式摄影",
+  sellingPoints: "",
+  customPrompt: "",
+  size: "1024x1024",
+  quality: "medium",
+  background: "auto",
 };
 
-function mockGeneratePrompt(input: PromptInput): PromptResult {
-  const product = input.productName || "产品";
-  const category = input.category || "跨境商品";
-  const points = input.coreSellingPoint || "高颜值、实用、适合日常使用";
+function buildPrompt(form: FormState) {
+  const product = form.productName.trim() || "the product";
+  const category = form.category.trim() || "cross-border ecommerce product";
+  const sellingPoints = form.sellingPoints.trim() || "practical, visually appealing, easy to understand";
+  const custom = form.customPrompt.trim();
 
-  return {
-    cnPrompt: `${product}，${category}类目，面向${input.country}${input.platform}用户，${input.desiredStyle}。画面突出${points}，产品主体清晰，占画面 65%，自然光，真实使用场景，商业摄影质感，干净背景，适合${input.generationType}。`,
-    enPrompt: `${product}, ${category} product for ${input.country} ${input.platform}, ${input.desiredStyle}. Highlight ${points}. Clear product hero, 65% frame coverage, natural light, realistic lifestyle scene, commercial photography, clean background, optimized for ${input.generationType}.`,
-    heroComposition: `主体置中偏右，左侧保留短卖点文案空间；首屏只放 1 个核心视觉利益点，例如“${points.split(/[、,，]/)[0]}”。背景根据${input.country}审美选择低干扰生活场景，避免道具抢走产品注意力。`,
-    detailStructure: [
-      `首图：产品全貌 + 一句话利益点，适合${input.platform}首屏停留。`,
-      `功能图：拆分展示${points}，每张图只讲一个卖点。`,
-      `场景图：放入${input.country}用户熟悉的生活或使用环境。`,
-      `对比图：用前后变化或容量对比强调购买理由。`,
-      `信任图：材质、尺寸、包装、售后承诺合并到末屏。`,
-    ],
-    videoScript: `0-3 秒用痛点开场：“出门东西太多还总是乱？” 3-8 秒展示${product}快速展开与装载过程。8-14 秒切换旅行、健身、通勤三个场景。14-18 秒用近景强调${points}。结尾 2 秒给出行动号召：“现在下单，把收纳变简单。”`,
-    storyboard: [
-      "镜头 1：杂乱行李或桌面快速闪过，制造痛点。",
-      `镜头 2：手部拿起${product}，一秒展开，产品主体占满画面。`,
-      `镜头 3：依次放入物品，用俯拍表现容量和分类能力。`,
-      `镜头 4：切到${input.country}本土化场景，突出真实使用感。`,
-      "镜头 5：产品收起后的体积对比，给出购买按钮或促销标签。",
-    ],
-    cautions: [
-      `如果投放${input.platform}，首图避免过多小字和夸张疗效表达。`,
-      `面向${input.country}市场时，人物、道具、颜色需要贴近本地审美。`,
-      "AI 作图 prompt 中不要混用过多风格词，防止画面失焦。",
-      "短视频脚本要保证前 3 秒出现产品或明确痛点。",
-    ],
-  };
+  return [
+    `Create a ${form.imageType} for ${product}, a ${category}.`,
+    `Target marketplace: ${form.platform}. Target market: ${form.market}.`,
+    `Visual style: ${form.style}.`,
+    `Highlight these selling points: ${sellingPoints}.`,
+    "Make the product the clear hero subject, commercial ecommerce photography, high resolution, clean composition, realistic lighting.",
+    "Avoid messy background, unreadable text, exaggerated medical or guarantee claims, watermarks, platform logos, and brand infringement.",
+    custom ? `Extra direction: ${custom}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
-function CopyTextButton({ text }: { text: string }) {
+function imageSrc(image: GeneratedImage | null) {
+  if (!image) return "";
+  if (image.b64Json) return `data:${image.mimeType};base64,${image.b64Json}`;
+  return image.url ?? "";
+}
+
+function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
 
-  async function handleCopy() {
+  async function copy() {
     await navigator.clipboard.writeText(text);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1200);
@@ -88,14 +86,11 @@ function CopyTextButton({ text }: { text: string }) {
   return (
     <button
       type="button"
-      onClick={handleCopy}
-      className={[
-        "inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[12px] font-medium transition-colors",
-        copied ? "bg-apple-green/10 text-apple-green" : "bg-apple-gray-50 text-apple-gray-900 hover:bg-apple-gray-100",
-      ].join(" ")}
+      onClick={copy}
+      className="inline-flex items-center gap-1 rounded-lg bg-apple-gray-50 px-2.5 py-1 text-[12px] font-medium text-apple-gray-900 hover:bg-apple-gray-100"
     >
-      {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-      <span>{copied ? "已复制" : "复制"}</span>
+      {copied ? <Check className="h-3.5 w-3.5 text-apple-green" /> : <Copy className="h-3.5 w-3.5" />}
+      {copied ? "已复制" : "复制 prompt"}
     </button>
   );
 }
@@ -104,134 +99,129 @@ function FieldLabel({ children }: { children: string }) {
   return <label className="mb-1.5 block text-[12px] font-medium text-apple-gray-300">{children}</label>;
 }
 
-function ResultPanel({ title, text, children }: { title: string; text: string; children: React.ReactNode }) {
-  return (
-    <div className="rounded-2xl border border-apple-gray-100 bg-white">
-      <div className="flex items-center justify-between gap-3 border-b border-apple-gray-100 px-4 py-3">
-        <h3 className="text-[13px] font-semibold text-apple-gray-900">{title}</h3>
-        <CopyTextButton text={text} />
-      </div>
-      <div className="p-4 text-[13px] leading-relaxed text-apple-gray-900">{children}</div>
-    </div>
-  );
-}
-
-function resultToText(result: PromptResult) {
-  return [
-    `中文提示词：${result.cnPrompt}`,
-    `英文提示词：${result.enPrompt}`,
-    `主图构图建议：${result.heroComposition}`,
-    "详情页图片结构：",
-    ...result.detailStructure.map((item, index) => `${index + 1}. ${item}`),
-    `视频脚本：${result.videoScript}`,
-    "拍摄分镜：",
-    ...result.storyboard.map((item, index) => `${index + 1}. ${item}`),
-    "注意事项：",
-    ...result.cautions.map((item, index) => `${index + 1}. ${item}`),
-  ].join("\n\n");
-}
-
 export default function AiPromptsPage() {
-  const [input, setInput] = useState<PromptInput>(initialInput);
-  const [result, setResult] = useState<PromptResult | null>(null);
-  const canGenerate = useMemo(() => input.productName.trim() || input.coreSellingPoint.trim(), [input]);
+  const [form, setForm] = useState<FormState>(initialForm);
+  const [loading, setLoading] = useState(false);
+  const [image, setImage] = useState<GeneratedImage | null>(null);
+  const [model, setModel] = useState("");
+  const [message, setMessage] = useState("");
 
-  function updateInput<K extends keyof PromptInput>(key: K, value: PromptInput[K]) {
-    setInput((prev) => ({ ...prev, [key]: value }));
+  const prompt = useMemo(() => buildPrompt(form), [form]);
+  const canGenerate = prompt.trim().length >= 8 && !loading;
+  const src = imageSrc(image);
+
+  function update<K extends keyof FormState>(key: K, value: FormState[K]) {
+    setForm((current) => ({ ...current, [key]: value }));
+    if (message) setMessage("");
   }
 
-  function handleGenerate() {
-    setResult(mockGeneratePrompt(input));
+  async function handleGenerate() {
+    setLoading(true);
+    setMessage("");
+    setImage(null);
+    const response = await generateImageWithAi({
+      prompt,
+      productName: form.productName,
+      platform: form.platform,
+      market: form.market,
+      imageType: form.imageType,
+      style: form.style,
+      size: form.size,
+      quality: form.quality,
+      background: form.background,
+    });
+    setLoading(false);
+
+    if (!response.ok || !response.image) {
+      setMessage(response.message || "生图失败，请检查 OPENAI_API_KEY 或稍后重试。");
+      return;
+    }
+
+    setImage(response.image);
+    setModel(response.model ?? "");
+    setMessage("图片已生成。");
+  }
+
+  function downloadImage() {
+    if (!src) return;
+    const link = document.createElement("a");
+    link.href = src;
+    link.download = `${form.productName || "seapick-image"}.png`;
+    link.click();
   }
 
   return (
     <div className="space-y-6">
       <PageHeader
         icon={Wand2}
-        title="AI 图片 / 视频建议"
-        badge="Mock 生成"
-        description="为主图、详情页、广告图、社媒图和短视频脚本生成中英文 prompt、构图建议与分镜。"
+        title="AI 生图"
+        badge="OpenAI Images"
+        description="输入商品、平台、市场和卖点，直接生成可用于主图、详情图、广告图或社媒图的电商图片。"
         action={
-          <Button icon={Sparkles} onClick={handleGenerate} disabled={!canGenerate}>
-            生成建议
+          <Button icon={loading ? Loader2 : Sparkles} onClick={handleGenerate} disabled={!canGenerate}>
+            {loading ? "生成中" : "生成图片"}
           </Button>
         }
       />
 
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[420px_1fr]">
-        <SectionCard title="输入信息" description="把产品和市场讲清楚，mock 结果会按平台和风格组织。">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[430px_1fr]">
+        <SectionCard title="生图参数" description="参数会被组织成英文 prompt 发送给图像模型。">
           <div className="space-y-4">
-            <div>
-              <FieldLabel>产品名称</FieldLabel>
-              <input
-                value={input.productName}
-                onChange={(event) => updateInput("productName", event.target.value)}
-                className="w-full rounded-xl border border-apple-gray-100 bg-apple-gray-50 px-3 py-2.5 text-[13px] outline-none focus:border-apple-blue"
-              />
-            </div>
-            <div>
-              <FieldLabel>产品类目</FieldLabel>
-              <input
-                value={input.category}
-                onChange={(event) => updateInput("category", event.target.value)}
-                className="w-full rounded-xl border border-apple-gray-100 bg-apple-gray-50 px-3 py-2.5 text-[13px] outline-none focus:border-apple-blue"
-              />
-            </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
-                <FieldLabel>目标国家</FieldLabel>
-                <select
-                  value={input.country}
-                  onChange={(event) => updateInput("country", event.target.value)}
+                <FieldLabel>商品名称</FieldLabel>
+                <input
+                  value={form.productName}
+                  onChange={(event) => update("productName", event.target.value)}
                   className="w-full rounded-xl border border-apple-gray-100 bg-apple-gray-50 px-3 py-2.5 text-[13px] outline-none focus:border-apple-blue"
-                >
-                  {COUNTRIES.map((item) => (
-                    <option key={item}>{item}</option>
-                  ))}
-                </select>
+                  placeholder="例如：折叠收纳包"
+                />
               </div>
+              <div>
+                <FieldLabel>商品类目</FieldLabel>
+                <input
+                  value={form.category}
+                  onChange={(event) => update("category", event.target.value)}
+                  className="w-full rounded-xl border border-apple-gray-100 bg-apple-gray-50 px-3 py-2.5 text-[13px] outline-none focus:border-apple-blue"
+                  placeholder="例如：旅行收纳"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <FieldLabel>目标平台</FieldLabel>
                 <select
-                  value={input.platform}
-                  onChange={(event) => updateInput("platform", event.target.value)}
+                  value={form.platform}
+                  onChange={(event) => update("platform", event.target.value)}
                   className="w-full rounded-xl border border-apple-gray-100 bg-apple-gray-50 px-3 py-2.5 text-[13px] outline-none focus:border-apple-blue"
                 >
-                  {PLATFORMS.map((item) => (
-                    <option key={item}>{item}</option>
-                  ))}
+                  {PLATFORMS.map((item) => <option key={item}>{item}</option>)}
+                </select>
+              </div>
+              <div>
+                <FieldLabel>目标市场</FieldLabel>
+                <select
+                  value={form.market}
+                  onChange={(event) => update("market", event.target.value)}
+                  className="w-full rounded-xl border border-apple-gray-100 bg-apple-gray-50 px-3 py-2.5 text-[13px] outline-none focus:border-apple-blue"
+                >
+                  {MARKETS.map((item) => <option key={item}>{item}</option>)}
                 </select>
               </div>
             </div>
+
             <div>
-              <FieldLabel>想要风格</FieldLabel>
-              <textarea
-                value={input.desiredStyle}
-                onChange={(event) => updateInput("desiredStyle", event.target.value)}
-                rows={2}
-                className="w-full resize-none rounded-xl border border-apple-gray-100 bg-apple-gray-50 px-3 py-2.5 text-[13px] outline-none focus:border-apple-blue"
-              />
-            </div>
-            <div>
-              <FieldLabel>核心卖点</FieldLabel>
-              <textarea
-                value={input.coreSellingPoint}
-                onChange={(event) => updateInput("coreSellingPoint", event.target.value)}
-                rows={3}
-                className="w-full resize-none rounded-xl border border-apple-gray-100 bg-apple-gray-50 px-3 py-2.5 text-[13px] outline-none focus:border-apple-blue"
-              />
-            </div>
-            <div>
-              <FieldLabel>生成类型</FieldLabel>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {GENERATION_TYPES.map((item) => (
+              <FieldLabel>图片类型</FieldLabel>
+              <div className="grid grid-cols-2 gap-2">
+                {IMAGE_TYPES.map((item) => (
                   <button
                     key={item}
                     type="button"
-                    onClick={() => updateInput("generationType", item)}
+                    onClick={() => update("imageType", item)}
                     className={[
-                      "rounded-xl border px-3 py-2 text-left text-[13px] font-medium transition-colors",
-                      input.generationType === item
+                      "rounded-xl border px-3 py-2 text-left text-[12.5px] font-medium transition-colors",
+                      form.imageType === item
                         ? "border-apple-blue bg-apple-blue/10 text-apple-blue"
                         : "border-apple-gray-100 bg-white text-apple-gray-900 hover:bg-apple-gray-50",
                     ].join(" ")}
@@ -241,17 +231,18 @@ export default function AiPromptsPage() {
                 ))}
               </div>
             </div>
+
             <div>
-              <FieldLabel>风格模板</FieldLabel>
+              <FieldLabel>视觉风格</FieldLabel>
               <div className="flex flex-wrap gap-2">
                 {STYLES.map((item) => (
                   <button
                     key={item}
                     type="button"
-                    onClick={() => updateInput("desiredStyle", item)}
+                    onClick={() => update("style", item)}
                     className={[
                       "rounded-full border px-3 py-1.5 text-[12px] font-medium transition-colors",
-                      input.desiredStyle === item
+                      form.style === item
                         ? "border-apple-blue bg-apple-blue text-white"
                         : "border-apple-gray-100 bg-white text-apple-gray-900 hover:bg-apple-gray-50",
                     ].join(" ")}
@@ -261,87 +252,114 @@ export default function AiPromptsPage() {
                 ))}
               </div>
             </div>
+
+            <div>
+              <FieldLabel>核心卖点</FieldLabel>
+              <textarea
+                value={form.sellingPoints}
+                onChange={(event) => update("sellingPoints", event.target.value)}
+                rows={3}
+                className="w-full resize-none rounded-xl border border-apple-gray-100 bg-apple-gray-50 px-3 py-2.5 text-[13px] outline-none focus:border-apple-blue"
+                placeholder="例如：防水、大容量、可折叠、轻便、适合旅行"
+              />
+            </div>
+
+            <div>
+              <FieldLabel>补充要求</FieldLabel>
+              <textarea
+                value={form.customPrompt}
+                onChange={(event) => update("customPrompt", event.target.value)}
+                rows={3}
+                className="w-full resize-none rounded-xl border border-apple-gray-100 bg-apple-gray-50 px-3 py-2.5 text-[13px] outline-none focus:border-apple-blue"
+                placeholder="例如：左侧留白放文字，不要人物，不要文字水印"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div>
+                <FieldLabel>尺寸</FieldLabel>
+                <select value={form.size} onChange={(event) => update("size", event.target.value as FormState["size"])} className="w-full rounded-xl border border-apple-gray-100 bg-apple-gray-50 px-3 py-2.5 text-[13px] outline-none focus:border-apple-blue">
+                  {SIZES.map((item) => <option key={item}>{item}</option>)}
+                </select>
+              </div>
+              <div>
+                <FieldLabel>质量</FieldLabel>
+                <select value={form.quality} onChange={(event) => update("quality", event.target.value as FormState["quality"])} className="w-full rounded-xl border border-apple-gray-100 bg-apple-gray-50 px-3 py-2.5 text-[13px] outline-none focus:border-apple-blue">
+                  {QUALITIES.map((item) => <option key={item}>{item}</option>)}
+                </select>
+              </div>
+              <div>
+                <FieldLabel>背景</FieldLabel>
+                <select value={form.background} onChange={(event) => update("background", event.target.value as FormState["background"])} className="w-full rounded-xl border border-apple-gray-100 bg-apple-gray-50 px-3 py-2.5 text-[13px] outline-none focus:border-apple-blue">
+                  {BACKGROUNDS.map((item) => <option key={item}>{item}</option>)}
+                </select>
+              </div>
+            </div>
           </div>
         </SectionCard>
 
         <SectionCard
           title="生成结果"
-          description="内容可直接交给设计、拍摄团队或 AI 作图工具继续迭代。"
-          action={result ? <CopyTextButton text={resultToText(result)} /> : undefined}
+          description="生成成功后会在这里预览图片，并可下载。"
+          action={src ? (
+            <div className="flex gap-2">
+              <CopyButton text={prompt} />
+              <button type="button" onClick={downloadImage} className="inline-flex items-center gap-1 rounded-lg bg-apple-blue px-2.5 py-1 text-[12px] font-medium text-white hover:bg-blue-600">
+                <Download className="h-3.5 w-3.5" />
+                下载
+              </button>
+            </div>
+          ) : <CopyButton text={prompt} />}
         >
-          {result ? (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                <ResultPanel title="中文提示词" text={result.cnPrompt}>
-                  {result.cnPrompt}
-                </ResultPanel>
-                <ResultPanel title="英文提示词" text={result.enPrompt}>
-                  {result.enPrompt}
-                </ResultPanel>
+          <div className="space-y-4">
+            {message && (
+              <div className="rounded-xl border border-apple-gray-100 bg-apple-gray-50 px-4 py-3 text-[12.5px] text-apple-gray-900">
+                {message}
+                {model ? <span className="ml-2 text-apple-gray-300">Model: {model}</span> : null}
               </div>
-              <ResultPanel title="主图构图建议" text={result.heroComposition}>
-                {result.heroComposition}
-              </ResultPanel>
-              <ResultPanel title="详情页图片结构" text={result.detailStructure.join("\n")}>
-                <ul className="space-y-2">
-                  {result.detailStructure.map((item) => (
-                    <li key={item} className="flex gap-2">
-                      <LayoutTemplate className="mt-0.5 h-4 w-4 shrink-0 text-apple-blue" />
-                      <span>{item}</span>
-                    </li>
-                  ))}
-                </ul>
-              </ResultPanel>
-              <ResultPanel title="视频脚本" text={result.videoScript}>
-                {result.videoScript}
-              </ResultPanel>
-              <ResultPanel title="拍摄分镜" text={result.storyboard.join("\n")}>
-                <ul className="space-y-2">
-                  {result.storyboard.map((item) => (
-                    <li key={item} className="flex gap-2">
-                      <Video className="mt-0.5 h-4 w-4 shrink-0 text-apple-orange" />
-                      <span>{item}</span>
-                    </li>
-                  ))}
-                </ul>
-              </ResultPanel>
-              <ResultPanel title="注意事项" text={result.cautions.join("\n")}>
-                <div className="flex flex-wrap gap-2">
-                  {result.cautions.map((item) => (
-                    <Badge key={item} tone="orange">
-                      {item}
-                    </Badge>
-                  ))}
-                </div>
-              </ResultPanel>
-            </div>
-          ) : (
-            <div className="grid min-h-[520px] place-items-center rounded-2xl border border-dashed border-apple-gray-200 bg-apple-gray-50/50 text-center">
-              <div>
-                <ImageIcon className="mx-auto mb-3 h-8 w-8 text-apple-gray-300" />
-                <div className="text-[14px] font-medium text-apple-gray-900">选择类型并生成视觉建议</div>
-                <div className="mt-1 text-[12px] text-apple-gray-300">会输出 prompt、构图、详情页结构、脚本和分镜。</div>
-              </div>
-            </div>
-          )}
-        </SectionCard>
-      </div>
+            )}
 
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-        {[
-          { icon: ImageIcon, title: "图片方向", desc: "主图、详情图、广告图和社媒图都可按市场生成。" },
-          { icon: Video, title: "视频方向", desc: "包含开场、卖点展示、场景切换和收尾行动号召。" },
-          { icon: ClipboardList, title: "交付清单", desc: "中文给内部沟通，英文给作图工具或海外素材团队。" },
-        ].map((item) => {
-          const Icon = item.icon;
-          return (
-            <div key={item.title} className="rounded-2xl border border-apple-gray-100 bg-white p-4">
-              <Icon className="mb-3 h-5 w-5 text-apple-blue" />
-              <div className="text-[13px] font-semibold text-apple-gray-900">{item.title}</div>
-              <div className="mt-1 text-[12px] leading-relaxed text-apple-gray-300">{item.desc}</div>
+            {loading ? (
+              <div className="grid min-h-[520px] place-items-center rounded-2xl border border-dashed border-apple-gray-200 bg-apple-gray-50/50 text-center">
+                <div>
+                  <Loader2 className="mx-auto mb-3 h-8 w-8 animate-spin text-apple-blue" />
+                  <div className="text-[14px] font-medium text-apple-gray-900">正在生成图片</div>
+                  <div className="mt-1 text-[12px] text-apple-gray-300">通常需要几十秒，取决于质量和模型负载。</div>
+                </div>
+              </div>
+            ) : src ? (
+              <div className="space-y-4">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={src} alt="AI generated product visual" className="max-h-[720px] w-full rounded-2xl border border-apple-gray-100 bg-apple-gray-50 object-contain" />
+                {image?.revisedPrompt ? (
+                  <div className="rounded-2xl border border-apple-gray-100 bg-white p-4">
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <div className="text-[13px] font-semibold text-apple-gray-900">模型优化后的 prompt</div>
+                      <CopyButton text={image.revisedPrompt} />
+                    </div>
+                    <div className="text-[12.5px] leading-relaxed text-apple-gray-300">{image.revisedPrompt}</div>
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <div className="grid min-h-[520px] place-items-center rounded-2xl border border-dashed border-apple-gray-200 bg-apple-gray-50/50 text-center">
+                <div>
+                  <ImageIcon className="mx-auto mb-3 h-8 w-8 text-apple-gray-300" />
+                  <div className="text-[14px] font-medium text-apple-gray-900">填写参数后生成图片</div>
+                  <div className="mt-1 text-[12px] text-apple-gray-300">适合电商主图、详情图、广告图和社媒素材。</div>
+                </div>
+              </div>
+            )}
+
+            <div className="rounded-2xl border border-apple-gray-100 bg-white p-4">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div className="text-[13px] font-semibold text-apple-gray-900">当前 prompt</div>
+                <Badge tone="gray">{form.imageType}</Badge>
+              </div>
+              <pre className="whitespace-pre-wrap break-words text-[12px] leading-relaxed text-apple-gray-300">{prompt}</pre>
             </div>
-          );
-        })}
+          </div>
+        </SectionCard>
       </div>
     </div>
   );
