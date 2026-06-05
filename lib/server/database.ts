@@ -1710,3 +1710,164 @@ export async function writeAuditLogToDb(input: {
     ]
   );
 }
+
+export type StoreAuthTokenRecord = {
+  id: string;
+  storeId: string | null;
+  platform: string;
+  externalShopId: string | null;
+  accessTokenEncrypted: string | null;
+  refreshTokenEncrypted: string | null;
+  accessTokenExpiresAt: string | null;
+  refreshTokenExpiresAt: string | null;
+  scopes: string[];
+  raw: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type DbStoreAuthTokenRow = {
+  id: string;
+  store_id: string | null;
+  platform: string;
+  external_shop_id: string | null;
+  access_token_encrypted: string | null;
+  refresh_token_encrypted: string | null;
+  access_token_expires_at: Date | string | null;
+  refresh_token_expires_at: Date | string | null;
+  scopes: unknown;
+  raw: Record<string, unknown> | null;
+  created_at: Date | string;
+  updated_at: Date | string;
+};
+
+function normalizeStoreAuthToken(row: DbStoreAuthTokenRow): StoreAuthTokenRecord {
+  return {
+    id: row.id,
+    storeId: row.store_id,
+    platform: row.platform,
+    externalShopId: row.external_shop_id,
+    accessTokenEncrypted: row.access_token_encrypted,
+    refreshTokenEncrypted: row.refresh_token_encrypted,
+    accessTokenExpiresAt: row.access_token_expires_at ? toIso(row.access_token_expires_at) : null,
+    refreshTokenExpiresAt: row.refresh_token_expires_at ? toIso(row.refresh_token_expires_at) : null,
+    scopes: Array.isArray(row.scopes) ? (row.scopes as string[]) : [],
+    raw: (row.raw ?? {}) as Record<string, unknown>,
+    createdAt: toIso(row.created_at)!,
+    updatedAt: toIso(row.updated_at)!,
+  };
+}
+
+export async function upsertStoreAuthTokenInDb(input: {
+  storeId: string | null;
+  platform: string;
+  externalShopId: string | null;
+  accessTokenEncrypted: string;
+  refreshTokenEncrypted: string;
+  accessTokenExpiresAt: string | null;
+  refreshTokenExpiresAt: string | null;
+  scopes?: string[];
+  raw?: Record<string, unknown>;
+}): Promise<StoreAuthTokenRecord> {
+  await ensureDatabaseSchema();
+  const existing = await getPool().query<DbStoreAuthTokenRow>(
+    `
+      SELECT id, store_id, platform, external_shop_id, access_token_encrypted,
+             refresh_token_encrypted, access_token_expires_at, refresh_token_expires_at,
+             scopes, raw, created_at, updated_at
+      FROM seapick_store_auth_tokens
+      WHERE platform = $1 AND external_shop_id = $2
+      LIMIT 1
+    `,
+    [input.platform, input.externalShopId]
+  );
+
+  if (existing.rows[0]) {
+    const result = await getPool().query<DbStoreAuthTokenRow>(
+      `
+        UPDATE seapick_store_auth_tokens
+        SET store_id = $2,
+            access_token_encrypted = $3,
+            refresh_token_encrypted = $4,
+            access_token_expires_at = $5,
+            refresh_token_expires_at = $6,
+            scopes = $7::jsonb,
+            raw = $8::jsonb,
+            updated_at = NOW()
+        WHERE id = $1
+        RETURNING id, store_id, platform, external_shop_id, access_token_encrypted,
+                  refresh_token_encrypted, access_token_expires_at, refresh_token_expires_at,
+                  scopes, raw, created_at, updated_at
+      `,
+      [
+        existing.rows[0].id,
+        input.storeId,
+        input.accessTokenEncrypted,
+        input.refreshTokenEncrypted,
+        input.accessTokenExpiresAt,
+        input.refreshTokenExpiresAt,
+        JSON.stringify(input.scopes ?? []),
+        JSON.stringify(input.raw ?? {}),
+      ]
+    );
+    return normalizeStoreAuthToken(result.rows[0]);
+  }
+
+  const result = await getPool().query<DbStoreAuthTokenRow>(
+    `
+      INSERT INTO seapick_store_auth_tokens (
+        id, store_id, platform, external_shop_id, access_token_encrypted,
+        refresh_token_encrypted, access_token_expires_at, refresh_token_expires_at,
+        scopes, raw
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb)
+      RETURNING id, store_id, platform, external_shop_id, access_token_encrypted,
+                refresh_token_encrypted, access_token_expires_at, refresh_token_expires_at,
+                scopes, raw, created_at, updated_at
+    `,
+    [
+      crypto.randomUUID(),
+      input.storeId,
+      input.platform,
+      input.externalShopId,
+      input.accessTokenEncrypted,
+      input.refreshTokenEncrypted,
+      input.accessTokenExpiresAt,
+      input.refreshTokenExpiresAt,
+      JSON.stringify(input.scopes ?? []),
+      JSON.stringify(input.raw ?? {}),
+    ]
+  );
+  return normalizeStoreAuthToken(result.rows[0]);
+}
+
+export async function getStoreAuthTokenFromDb(input: {
+  platform: string;
+  storeId?: string | null;
+  externalShopId?: string | null;
+}): Promise<StoreAuthTokenRecord | null> {
+  await ensureDatabaseSchema();
+  const conditions: string[] = ["platform = $1"];
+  const values: unknown[] = [input.platform];
+  if (input.storeId) {
+    values.push(input.storeId);
+    conditions.push(`store_id = $${values.length}`);
+  }
+  if (input.externalShopId) {
+    values.push(input.externalShopId);
+    conditions.push(`external_shop_id = $${values.length}`);
+  }
+  const result = await getPool().query<DbStoreAuthTokenRow>(
+    `
+      SELECT id, store_id, platform, external_shop_id, access_token_encrypted,
+             refresh_token_encrypted, access_token_expires_at, refresh_token_expires_at,
+             scopes, raw, created_at, updated_at
+      FROM seapick_store_auth_tokens
+      WHERE ${conditions.join(" AND ")}
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `,
+    values
+  );
+  return result.rows[0] ? normalizeStoreAuthToken(result.rows[0]) : null;
+}

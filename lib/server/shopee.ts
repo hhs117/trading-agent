@@ -196,6 +196,212 @@ export function validateShopeeListingDraft(draft: ShopeeListingDraft): ShopeeLis
   }
 }
 
+function signShopeeShopPath(
+  path: string,
+  timestamp: number,
+  accessToken: string,
+  shopId: string
+) {
+  const partnerId = process.env.SHOPEE_PARTNER_ID?.trim() || process.env.SHOPEE_CLIENT_ID?.trim();
+  const partnerKey =
+    process.env.SHOPEE_PARTNER_KEY?.trim() || process.env.SHOPEE_CLIENT_SECRET?.trim();
+  if (!partnerId || !partnerKey) {
+    throw new Error("Shopee partner credentials are not configured");
+  }
+  return createHmac("sha256", partnerKey)
+    .update(`${partnerId}${path}${timestamp}${accessToken}${shopId}`)
+    .digest("hex");
+}
+
+export type ShopeeTokenResponse = {
+  access_token: string;
+  refresh_token: string;
+  expire_in: number;
+  refresh_token_expire_in?: number;
+  shop_id?: number;
+  shop_id_list?: number[];
+  merchant_id_list?: number[];
+  error?: string;
+  message?: string;
+  request_id?: string;
+};
+
+export async function exchangeShopeeAuthCode(input: {
+  code: string;
+  shopId: string;
+}): Promise<ShopeeTokenResponse> {
+  const partnerId = process.env.SHOPEE_PARTNER_ID?.trim() || process.env.SHOPEE_CLIENT_ID?.trim();
+  if (!partnerId) {
+    throw new Error("SHOPEE_PARTNER_ID is not configured");
+  }
+  const path = "/api/v2/auth/token/get";
+  const timestamp = Math.floor(Date.now() / 1000);
+  const sign = signShopeePath(path, timestamp);
+  const baseUrl = process.env.SHOPEE_API_BASE_URL?.trim() || DEFAULT_API_BASE_URL;
+  const url = new URL(path, baseUrl);
+  url.searchParams.set("partner_id", partnerId);
+  url.searchParams.set("timestamp", String(timestamp));
+  url.searchParams.set("sign", sign);
+
+  const response = await fetch(url.toString(), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      code: input.code,
+      shop_id: Number(input.shopId),
+      partner_id: Number(partnerId),
+    }),
+  });
+
+  const data = (await response.json()) as ShopeeTokenResponse;
+  if (!response.ok || data.error) {
+    throw new Error(
+      `Shopee token exchange failed: ${data.error || response.status} ${data.message || ""}`.trim()
+    );
+  }
+  return data;
+}
+
+export async function refreshShopeeAccessToken(input: {
+  refreshToken: string;
+  shopId: string;
+}): Promise<ShopeeTokenResponse> {
+  const partnerId = process.env.SHOPEE_PARTNER_ID?.trim() || process.env.SHOPEE_CLIENT_ID?.trim();
+  if (!partnerId) {
+    throw new Error("SHOPEE_PARTNER_ID is not configured");
+  }
+  const path = "/api/v2/auth/access_token/get";
+  const timestamp = Math.floor(Date.now() / 1000);
+  const sign = signShopeePath(path, timestamp);
+  const baseUrl = process.env.SHOPEE_API_BASE_URL?.trim() || DEFAULT_API_BASE_URL;
+  const url = new URL(path, baseUrl);
+  url.searchParams.set("partner_id", partnerId);
+  url.searchParams.set("timestamp", String(timestamp));
+  url.searchParams.set("sign", sign);
+
+  const response = await fetch(url.toString(), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      refresh_token: input.refreshToken,
+      shop_id: Number(input.shopId),
+      partner_id: Number(partnerId),
+    }),
+  });
+  const data = (await response.json()) as ShopeeTokenResponse;
+  if (!response.ok || data.error) {
+    throw new Error(
+      `Shopee token refresh failed: ${data.error || response.status} ${data.message || ""}`.trim()
+    );
+  }
+  return data;
+}
+
+export type ShopeeApiResponse<T = unknown> = {
+  error: string;
+  message: string;
+  request_id?: string;
+  response?: T;
+};
+
+export async function callShopeeShopApi<T = unknown>(input: {
+  path: string;
+  accessToken: string;
+  shopId: string;
+  method?: "GET" | "POST";
+  query?: Record<string, string | number | undefined>;
+  body?: Record<string, unknown>;
+}): Promise<ShopeeApiResponse<T>> {
+  const partnerId = process.env.SHOPEE_PARTNER_ID?.trim() || process.env.SHOPEE_CLIENT_ID?.trim();
+  if (!partnerId) {
+    throw new Error("SHOPEE_PARTNER_ID is not configured");
+  }
+  const timestamp = Math.floor(Date.now() / 1000);
+  const sign = signShopeeShopPath(input.path, timestamp, input.accessToken, input.shopId);
+  const baseUrl = process.env.SHOPEE_API_BASE_URL?.trim() || DEFAULT_API_BASE_URL;
+  const url = new URL(input.path, baseUrl);
+  url.searchParams.set("partner_id", partnerId);
+  url.searchParams.set("timestamp", String(timestamp));
+  url.searchParams.set("access_token", input.accessToken);
+  url.searchParams.set("shop_id", input.shopId);
+  url.searchParams.set("sign", sign);
+
+  if (input.query) {
+    for (const [key, value] of Object.entries(input.query)) {
+      if (value !== undefined && value !== null) {
+        url.searchParams.set(key, String(value));
+      }
+    }
+  }
+
+  const method = input.method ?? (input.body ? "POST" : "GET");
+  const response = await fetch(url.toString(), {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: input.body ? JSON.stringify(input.body) : undefined,
+  });
+  const data = (await response.json()) as ShopeeApiResponse<T>;
+  return data;
+}
+
+export type ShopeeAddItemResult = {
+  item_id: number;
+  request_id?: string;
+};
+
+export async function addShopeeItem(input: {
+  accessToken: string;
+  shopId: string;
+  draft: ShopeeListingDraft;
+}): Promise<ShopeeAddItemResult> {
+  const draft = input.draft;
+  if (!draft.categoryId) {
+    throw new Error("draft.categoryId is required to publish to Shopee");
+  }
+
+  const body: Record<string, unknown> = {
+    original_price: draft.price,
+    description: draft.description,
+    item_name: draft.title,
+    weight: draft.weightKg ?? 0.5,
+    item_status: "NORMAL",
+    category_id: draft.categoryId,
+    image: { image_url_list: draft.images.slice(0, 9) },
+    normal_stock: draft.stock,
+    brand: draft.brand ? { brand_id: 0, original_brand_name: draft.brand } : undefined,
+    attribute_list: draft.attributes
+      .filter((attr) => attr.id !== undefined)
+      .map((attr) => ({
+        attribute_id: attr.id,
+        attribute_value_list: [{ original_value_name: attr.value }],
+      })),
+    logistic_info: draft.logistics
+      .filter((logistic) => logistic.enabled && logistic.id !== undefined)
+      .map((logistic) => ({
+        logistic_id: logistic.id,
+        enabled: logistic.enabled,
+      })),
+  };
+
+  const result = await callShopeeShopApi<ShopeeAddItemResult>({
+    path: "/api/v2/product/add_item",
+    accessToken: input.accessToken,
+    shopId: input.shopId,
+    method: "POST",
+    body,
+  });
+
+  if (result.error) {
+    throw new Error(
+      `Shopee add_item failed: ${result.error} ${result.message || ""} request_id=${result.request_id || ""}`.trim()
+    );
+  }
+  if (!result.response?.item_id) {
+    throw new Error(`Shopee add_item returned no item_id: ${JSON.stringify(result)}`);
+  }
+  return { item_id: result.response.item_id, request_id: result.request_id };
+}
+
 function inferRegion(market?: string | null): ShopeeRegion | null {
   if (!market) return null;
   const upper = market.toUpperCase();
